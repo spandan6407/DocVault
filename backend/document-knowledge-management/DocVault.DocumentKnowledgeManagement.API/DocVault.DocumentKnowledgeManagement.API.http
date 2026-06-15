@@ -1,0 +1,6 @@
+@DocVault.DocumentKnowledgeManagement.API_HostAddress = http://localhost:5078
+
+GET {{DocVault.DocumentKnowledgeManagement.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

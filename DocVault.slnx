@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/backend/" />
+  <Folder Name="/backend/document-knowledge-management/">
+    <Project Path="backend/document-knowledge-management/DocVault.DocumentKnowledgeManagement.API/DocVault.DocumentKnowledgeManagement.API.csproj" />
+    <Project Path="backend/document-knowledge-management/DocVault.DocumentKnowledgeManagement.Application/DocVault.DocumentKnowledgeManagement.Application.csproj" />
+    <Project Path="backend/document-knowledge-management/DocVault.DocumentKnowledgeManagement.Domain/DocVault.DocumentKnowledgeManagement.Domain.csproj" />
+    <Project Path="backend/document-knowledge-management/DocVault.DocumentKnowledgeManagement.Infrastructure/DocVault.DocumentKnowledgeManagement.Infrastructure.csproj" />
+    <Project Path="backend/document-knowledge-management/DocVault.DocumentKnowledgeManagement.Test/DocVault.DocumentKnowledgeManagement.Test.csproj" />
+  </Folder>
+</Solution>
