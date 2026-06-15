@@ -1,3 +1,5 @@
+using DocVault.DocumentKnowledgeManagement.Application.Interfaces;
+using DocVault.DocumentKnowledgeManagement.Infrastructure.Services;
 using DocVault.DocumentKnowledgeManagement.Infrastructure.Identity;
 using DocVault.DocumentKnowledgeManagement.Infrastructure.Seeders;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -9,17 +11,14 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection")));
-
 
 builder.Services.AddIdentityCore<ApplicationUser>()
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddDefaultTokenProviders();
-
 
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["SecretKey"];
@@ -40,16 +39,17 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = jwtSettings["Issuer"],
         ValidAudience = jwtSettings["Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(
-                                       Encoding.UTF8.GetBytes(secretKey!))
+            Encoding.UTF8.GetBytes(secretKey!))
     };
 });
 
+
+builder.Services.AddScoped<IAuthService, AuthService>();
 
 builder.Services.AddAuthorization();
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-
 
 builder.Services.AddOpenApi();
 
@@ -67,11 +67,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
 
 using (var scope = app.Services.CreateScope())
 {
