@@ -20,7 +20,7 @@ public static class DataSeeder
         await SeedAdminAsync(userManager, logger);
     }
 
-    // ✅ Seed Roles
+    //  Seed Roles
     private static async Task SeedRolesAsync(
         RoleManager<IdentityRole> roleManager,
         ILogger logger)
