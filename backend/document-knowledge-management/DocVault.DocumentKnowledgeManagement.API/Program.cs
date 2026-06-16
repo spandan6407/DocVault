@@ -45,7 +45,7 @@ builder.Services.AddAuthentication(options =>
 
 
 builder.Services.AddScoped<IAuthService, AuthService>();
-
+builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddAuthorization();
 
 builder.Services.AddControllers();
