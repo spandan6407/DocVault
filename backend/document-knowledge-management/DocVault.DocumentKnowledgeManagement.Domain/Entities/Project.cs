@@ -12,7 +12,7 @@ public class Project
     public DateTime? UpdatedAt { get; set; }
     public bool IsActive { get; set; }
 
-    // Navigation Properties
+
     public ICollection<Document> Documents { get; set; }
         = new List<Document>();
-}
+}   
