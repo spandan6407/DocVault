@@ -1,43 +1,46 @@
-﻿using DocVault.DocumentKnowledgeManagement.Application.DTOs.Users;
-using DocVault.DocumentKnowledgeManagement.Application.Interfaces;
-using DocVault.DocumentKnowledgeManagement.Infrastructure.Identity;
+﻿using DocVault.UserManagement.Application.DTOs.Users;
+using DocVault.UserManagement.Application.Events.Published;
+using DocVault.UserManagement.Application.Interfaces;
+using DocVault.UserManagement.Domain.Entities;
+using DocVault.UserManagement.Infrastructure.Identity;
+using MassTransit;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
-namespace DocVault.DocumentKnowledgeManagement.Infrastructure.Services;
+namespace DocVault.UserManagement.Infrastructure.Services;
 
 public class UserService : IUserService
 {
     private readonly UserManager<ApplicationUser> _userManager;
-    private readonly ApplicationDbContext _context;
+    private readonly UserManagementDbContext _context;
+    private readonly IPublishEndpoint _publishEndpoint;
 
     public UserService(
         UserManager<ApplicationUser> userManager,
-        ApplicationDbContext context)
+        UserManagementDbContext context,
+        IPublishEndpoint publishEndpoint)
     {
         _userManager = userManager;
         _context = context;
+        _publishEndpoint = publishEndpoint;
     }
 
     //  Create User
     public async Task<UserResponseDto?> CreateUserAsync(CreateUserDto request)
     {
-        // BR-002: Only Admin can create users
-        // BR-003: Every user must belong to exactly one project
-
-        // Validate role — Admin cannot be assigned via API (BR-008)
+        // Validate role
         if (request.Role == "Admin")
             return null;
 
-        // Validate role is valid
         if (request.Role != "ProjectHead" && request.Role != "User")
             return null;
 
-        // Check project exists
-        var project = await _context.Projects
-            .FirstOrDefaultAsync(p => p.Id == request.ProjectId && p.IsActive);
+        // Check project exists in UserProjects
+        var projectExists = await _context.UserProjects
+            .AnyAsync(up => up.ProjectId == request.ProjectId
+                         && up.IsActive);
 
-        if (project == null)
+        if (!projectExists)
             return null;
 
         // Create User
@@ -60,6 +63,18 @@ public class UserService : IUserService
         // Assign Role
         await _userManager.AddToRoleAsync(user, request.Role);
 
+        //  Publish Event to RabbitMQ
+        await _publishEndpoint.Publish(new UserCreatedEvent
+        {
+            UserId = user.Id,
+            Email = user.Email!,
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            Role = request.Role,
+            ProjectId = request.ProjectId,
+            CreatedAt = user.CreatedAt
+        });
+
         return await MapToResponseAsync(user);
     }
 
@@ -80,9 +95,10 @@ public class UserService : IUserService
 
     //  Get Users By Project
     public async Task<List<UserResponseDto>> GetUsersByProjectAsync(
-        Guid projectId, string requesterId, string requesterRole)
+        Guid projectId,
+        string requesterId,
+        string requesterRole)
     {
-        // BR-011: ProjectHead can only view users from own project
         if (requesterRole == "ProjectHead")
         {
             var requester = await _context.Users
@@ -106,41 +122,62 @@ public class UserService : IUserService
 
     //  Assign Project Head
     public async Task<UserResponseDto?> AssignProjectHeadAsync(
-        string userId, AssignProjectHeadDto request)
+        string userId,
+        AssignProjectHeadDto request)
     {
-        // BR-005: Only one ProjectHead per project
         var user = await _userManager.FindByIdAsync(userId);
         if (user == null || !user.IsActive)
             return null;
 
-        // Check user belongs to this project
         if (user.ProjectId != request.ProjectId)
             return null;
 
-        // Find existing ProjectHead of this project
-        var existingProjectHeads = await _userManager
+        // Find existing ProjectHead
+        var existingHeads = await _userManager
             .GetUsersInRoleAsync("ProjectHead");
-
-        var existingHead = existingProjectHeads
+        var existingHead = existingHeads
             .FirstOrDefault(u => u.ProjectId == request.ProjectId);
+
+        string? oldProjectHeadId = null;
 
         if (existingHead != null)
         {
-            // Remove ProjectHead role → assign User role
-            await _userManager.RemoveFromRoleAsync(existingHead, "ProjectHead");
+            oldProjectHeadId = existingHead.Id;
+            await _userManager.RemoveFromRoleAsync(
+                existingHead, "ProjectHead");
             await _userManager.AddToRoleAsync(existingHead, "User");
+
+            //  Publish Role Changed Event
+            await _publishEndpoint.Publish(new UserRoleAssignedEvent
+            {
+                UserId = existingHead.Id,
+                OldRole = "ProjectHead",
+                NewRole = "User",
+                ProjectId = request.ProjectId,
+                AssignedAt = DateTime.UtcNow
+            });
         }
 
-        // Remove current role → assign ProjectHead role
+        // Assign new ProjectHead
         var currentRoles = await _userManager.GetRolesAsync(user);
         await _userManager.RemoveFromRolesAsync(user, currentRoles);
         await _userManager.AddToRoleAsync(user, "ProjectHead");
+
+        //  Publish ProjectHead Assigned Event
+        await _publishEndpoint.Publish(new ProjectHeadAssignedEvent
+        {
+            NewProjectHeadId = user.Id,
+            OldProjectHeadId = oldProjectHeadId,
+            ProjectId = request.ProjectId,
+            AssignedAt = DateTime.UtcNow
+        });
 
         return await MapToResponseAsync(user);
     }
 
     //  Map to Response
-    private async Task<UserResponseDto> MapToResponseAsync(ApplicationUser user)
+    private async Task<UserResponseDto> MapToResponseAsync(
+        ApplicationUser user)
     {
         var roles = await _userManager.GetRolesAsync(user);
         var role = roles.FirstOrDefault() ?? string.Empty;

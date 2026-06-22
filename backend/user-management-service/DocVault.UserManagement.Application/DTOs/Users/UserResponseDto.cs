@@ -1,4 +1,4 @@
-﻿namespace DocVault.DocumentKnowledgeManagement.Application.DTOs.Users;
+﻿namespace DocVault.UserManagement.Application.DTOs.Users;
 
 public class UserResponseDto
 {
