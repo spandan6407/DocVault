@@ -18,7 +18,7 @@ public class ProjectsController : ControllerBase
         _projectService = projectService;
     }
 
-    // ✅ POST /api/projects
+    //  POST /api/projects
     [HttpPost]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> CreateProject(
@@ -39,7 +39,7 @@ public class ProjectsController : ControllerBase
             result);
     }
 
-    // ✅ GET /api/projects
+    //  GET /api/projects
     [HttpGet]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetAllProjects()
@@ -48,7 +48,7 @@ public class ProjectsController : ControllerBase
         return Ok(result);
     }
 
-    // ✅ GET /api/projects/{id}
+    //  GET /api/projects/{id}
     [HttpGet("{id}")]
     [Authorize(Roles = "Admin,ProjectHead,User")]
     public async Task<IActionResult> GetProjectById(Guid id)
@@ -67,7 +67,7 @@ public class ProjectsController : ControllerBase
         return Ok(result);
     }
 
-    // ✅ PUT /api/projects/{id}
+    //  PUT /api/projects/{id}
     [HttpPut("{id}")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> UpdateProject(

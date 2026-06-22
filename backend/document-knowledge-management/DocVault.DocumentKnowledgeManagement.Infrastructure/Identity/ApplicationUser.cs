@@ -4,7 +4,7 @@ namespace DocVault.DocumentKnowledgeManagement.Infrastructure.Identity;
 
 public class ApplicationUser : IdentityUser
 {
-    // comment to be removed
+    // commment to be removed a
     public string FirstName { get; set; } = string.Empty;
     public string LastName { get; set; } = string.Empty;
     public Guid? ProjectId { get; set; } 

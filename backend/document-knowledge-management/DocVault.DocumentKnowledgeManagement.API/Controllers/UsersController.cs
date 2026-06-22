@@ -38,7 +38,7 @@ public class UsersController : ControllerBase
         return Ok(result);
     }
 
-    //  GET /api/users
+    //  GET /api/users....
     [HttpGet("users")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetAllUsers()
@@ -47,7 +47,7 @@ public class UsersController : ControllerBase
         return Ok(result);
     }
 
-    //  GET /api/projects/{projectId}/users
+    //  GET /api/projects/{projectId}/users....
     [HttpGet("projects/{projectId}/users")]
     [Authorize(Roles = "Admin,ProjectHead")]
     public async Task<IActionResult> GetUsersByProject(Guid projectId)

@@ -17,7 +17,7 @@ public class AuthController : ControllerBase
         _authService = authService;
     }
 
-    // ✅ POST /api/auth/login
+    //  POST /api/auth/login
     [HttpPost("login")]
     [AllowAnonymous]
     public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
@@ -33,7 +33,7 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 
-    // ✅ GET /api/auth/me
+    //  GET /api/auth/me
     [HttpGet("me")]
     [Authorize]
     public async Task<IActionResult> GetCurrentUser()
