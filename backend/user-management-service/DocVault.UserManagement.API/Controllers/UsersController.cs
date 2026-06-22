@@ -1,10 +1,10 @@
-﻿using DocVault.DocumentKnowledgeManagement.Application.DTOs.Users;
-using DocVault.DocumentKnowledgeManagement.Application.Interfaces;
+﻿using DocVault.UserManagement.Application.DTOs.Users;
+using DocVault.UserManagement.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 
-namespace DocVault.DocumentKnowledgeManagement.API.Controllers;
+namespace DocVault.UserManagement.API.Controllers;
 
 [ApiController]
 [Route("api")]
@@ -18,7 +18,6 @@ public class UsersController : ControllerBase
         _userService = userService;
     }
 
-    //  POST /api/users
     [HttpPost("users")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> CreateUser(
@@ -28,17 +27,12 @@ public class UsersController : ControllerBase
             return BadRequest(ModelState);
 
         var result = await _userService.CreateUserAsync(request);
-
         if (result == null)
-            return BadRequest(new
-            {
-                message = "User creation failed. Check role and project."
-            });
+            return BadRequest(new { message = "User creation failed." });
 
         return Ok(result);
     }
 
-    //  GET /api/users....
     [HttpGet("users")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetAllUsers()
@@ -47,7 +41,6 @@ public class UsersController : ControllerBase
         return Ok(result);
     }
 
-    //  GET /api/projects/{projectId}/users....
     [HttpGet("projects/{projectId}/users")]
     [Authorize(Roles = "Admin,ProjectHead")]
     public async Task<IActionResult> GetUsersByProject(Guid projectId)
@@ -63,19 +56,16 @@ public class UsersController : ControllerBase
         return Ok(result);
     }
 
-    //  PUT /api/users/{id}/assign-project-head
     [HttpPut("users/{id}/assign-project-head")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> AssignProjectHead(
         string id, [FromBody] AssignProjectHeadDto request)
     {
-        var result = await _userService.AssignProjectHeadAsync(id, request);
+        var result = await _userService
+            .AssignProjectHeadAsync(id, request);
 
         if (result == null)
-            return BadRequest(new
-            {
-                message = "Assignment failed. Check user and project."
-            });
+            return BadRequest(new { message = "Assignment failed." });
 
         return Ok(result);
     }
