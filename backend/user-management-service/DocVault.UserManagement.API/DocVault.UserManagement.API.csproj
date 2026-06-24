@@ -7,20 +7,20 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MassTransit" Version="8.2.3" />
-    <PackageReference Include="MassTransit.RabbitMQ" Version="8.2.3" />
+	  <PackageReference Include="MassTransit" Version="8.3.6" />
+	  <PackageReference Include="MassTransit.RabbitMQ" Version="8.3.6" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.6" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Scalar.AspNetCore" Version="2.16.3" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.16.4" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DocVault.DocumentKnowledgeManagement.Application\DocVault.DocumentKnowledgeManagement.Application.csproj" />
-    <ProjectReference Include="..\DocVault.DocumentKnowledgeManagement.Infrastructure\DocVault.DocumentKnowledgeManagement.Infrastructure.csproj" />
+    <ProjectReference Include="..\DocVault.UserManagement.Application\DocVault.UserManagement.Application.csproj" />
+    <ProjectReference Include="..\DocVault.UserManagement.Infrastructure\DocVault.UserManagement.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

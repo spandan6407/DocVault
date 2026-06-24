@@ -7,4 +7,11 @@
     <Project Path="backend/document-knowledge-management/DocVault.DocumentKnowledgeManagement.Infrastructure/DocVault.DocumentKnowledgeManagement.Infrastructure.csproj" />
     <Project Path="backend/document-knowledge-management/DocVault.DocumentKnowledgeManagement.Test/DocVault.DocumentKnowledgeManagement.Test.csproj" />
   </Folder>
+  <Folder Name="/backend/user-management-service/">
+    <Project Path="backend/user-management-service/DocVault.UserManagement.API/DocVault.UserManagement.API.csproj" />
+    <Project Path="backend/user-management-service/DocVault.UserManagement.Application/DocVault.UserManagement.Application.csproj" />
+    <Project Path="backend/user-management-service/DocVault.UserManagement.Domain/DocVault.UserManagement.Domain.csproj" />
+    <Project Path="backend/user-management-service/DocVault.UserManagement.Infrastructure/DocVault.UserManagement.Infrastructure.csproj" />
+    <Project Path="backend/user-management-service/DocVault.UserManagement.Test/DocVault.UserManagement.Test.csproj" />
+  </Folder>
 </Solution>

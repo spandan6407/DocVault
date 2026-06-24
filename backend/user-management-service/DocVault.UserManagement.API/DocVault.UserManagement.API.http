@@ -1,0 +1,6 @@
+@DocVault.UserManagement.API_HostAddress = http://localhost:5261
+
+GET {{DocVault.UserManagement.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
