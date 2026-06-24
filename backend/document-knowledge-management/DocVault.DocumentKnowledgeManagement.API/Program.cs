@@ -1,9 +1,8 @@
 using DocVault.DocumentKnowledgeManagement.Application.Interfaces;
-using DocVault.DocumentKnowledgeManagement.Infrastructure.Services;
 using DocVault.DocumentKnowledgeManagement.Infrastructure.Identity;
-using DocVault.DocumentKnowledgeManagement.Infrastructure.Seeders;
+using DocVault.DocumentKnowledgeManagement.Infrastructure.Services;
+using MassTransit;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
@@ -11,15 +10,12 @@ using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Database
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(
         builder.Configuration.GetConnectionString("DefaultConnection")));
 
-builder.Services.AddIdentityCore<ApplicationUser>()
-    .AddRoles<IdentityRole>()
-    .AddEntityFrameworkStores<ApplicationDbContext>()
-    .AddDefaultTokenProviders();
-
+// JWT Validation Only — no Identity, no token generation
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["SecretKey"];
 
@@ -43,15 +39,26 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+// RabbitMQ with MassTransit
+builder.Services.AddMassTransit(x =>
+{
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        cfg.Host(builder.Configuration["RabbitMQ:Host"], h =>
+        {
+            h.Username(builder.Configuration["RabbitMQ:Username"]!);
+            h.Password(builder.Configuration["RabbitMQ:Password"]!);
+        });
+    });
+});
 
-builder.Services.AddScoped<IAuthService, AuthService>();
+// Services
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<IDocumentService, DocumentService>();
-builder.Services.AddAuthorization();
 
+builder.Services.AddAuthorization();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -67,25 +74,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-
 app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
-
-
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    try
-    {
-        await DataSeeder.SeedAsync(services);
-    }
-    catch (Exception ex)
-    {
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Error occurred during seeding.");
-    }
-}
 
 app.Run();

@@ -10,7 +10,7 @@ public interface IProjectService
     Task<List<ProjectResponseDto>> GetAllProjectsAsync();
 
     Task<ProjectResponseDto?> GetProjectByIdAsync(
-        Guid projectId, string userId, string role);
+        Guid projectId, string userId, string role, Guid? userProjectId);
 
     Task<ProjectResponseDto?> UpdateProjectAsync(
         Guid projectId, UpdateProjectDto request);

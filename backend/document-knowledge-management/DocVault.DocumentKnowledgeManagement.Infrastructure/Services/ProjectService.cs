@@ -1,7 +1,9 @@
 ﻿using DocVault.DocumentKnowledgeManagement.Application.DTOs.Projects;
+using DocVault.DocumentKnowledgeManagement.Application.Events.Published;
 using DocVault.DocumentKnowledgeManagement.Application.Interfaces;
 using DocVault.DocumentKnowledgeManagement.Domain.Entities;
 using DocVault.DocumentKnowledgeManagement.Infrastructure.Identity;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 
 namespace DocVault.DocumentKnowledgeManagement.Infrastructure.Services;
@@ -9,13 +11,17 @@ namespace DocVault.DocumentKnowledgeManagement.Infrastructure.Services;
 public class ProjectService : IProjectService
 {
     private readonly ApplicationDbContext _context;
+    private readonly IPublishEndpoint _publishEndpoint;
 
-    public ProjectService(ApplicationDbContext context)
+    public ProjectService(
+        ApplicationDbContext context,
+        IPublishEndpoint publishEndpoint)
     {
         _context = context;
+        _publishEndpoint = publishEndpoint;
     }
 
-    //  Create Project
+    // Create Project
     public async Task<ProjectResponseDto> CreateProjectAsync(
         CreateProjectDto request, string createdBy)
     {
@@ -32,10 +38,19 @@ public class ProjectService : IProjectService
         _context.Projects.Add(project);
         await _context.SaveChangesAsync();
 
+        // Publish Event to RabbitMQ
+        await _publishEndpoint.Publish(new ProjectCreatedEvent
+        {
+            ProjectId = project.Id,
+            ProjectName = project.Name,
+            CreatedBy = createdBy,
+            CreatedAt = project.CreatedAt
+        });
+
         return MapToResponse(project);
     }
 
-    //  Get All Projects
+    // Get All Projects
     public async Task<List<ProjectResponseDto>> GetAllProjectsAsync()
     {
         var projects = await _context.Projects
@@ -46,9 +61,9 @@ public class ProjectService : IProjectService
         return projects.Select(MapToResponse).ToList();
     }
 
-    //  Get Project By Id
+    // Get Project By Id
     public async Task<ProjectResponseDto?> GetProjectByIdAsync(
-        Guid projectId, string userId, string role)
+        Guid projectId, string userId, string role, Guid? userProjectId)
     {
         var project = await _context.Projects
             .FirstOrDefaultAsync(p => p.Id == projectId && p.IsActive);
@@ -60,17 +75,14 @@ public class ProjectService : IProjectService
         if (role == "Admin")
             return MapToResponse(project);
 
-        // ProjectHead and User can only access their own project
-        var user = await _context.Users
-            .FirstOrDefaultAsync(u => u.Id == userId);
-
-        if (user == null || user.ProjectId != projectId)
+        // ProjectHead and User — validate against JWT claim directly
+        if (userProjectId == null || userProjectId != projectId)
             return null;
 
         return MapToResponse(project);
     }
 
-    //  Update Project
+    // Update Project
     public async Task<ProjectResponseDto?> UpdateProjectAsync(
         Guid projectId, UpdateProjectDto request)
     {
@@ -89,7 +101,6 @@ public class ProjectService : IProjectService
         return MapToResponse(project);
     }
 
-    
     private static ProjectResponseDto MapToResponse(Project project)
     {
         return new ProjectResponseDto
