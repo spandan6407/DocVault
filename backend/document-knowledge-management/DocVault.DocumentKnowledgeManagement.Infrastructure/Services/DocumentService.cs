@@ -12,7 +12,7 @@ public class DocumentService : IDocumentService
     private readonly ApplicationDbContext _context;
     private readonly string _storageBasePath;
 
-    // ✅ Allowed file types (extension only)
+    //  Allowed file types (extension only)
     private static readonly Dictionary<string, string> AllowedFileTypes = new()
     {
         { ".pdf",  "application/pdf" },
@@ -29,7 +29,7 @@ public class DocumentService : IDocumentService
                         ?? Path.Combine(Directory.GetCurrentDirectory(), "uploads");
     }
 
-    // ✅ Upload Document
+    //  Upload Document
     public async Task<DocumentResponseDto?> UploadDocumentAsync(
         UploadDocumentDto request,
         string uploadedBy,
@@ -43,21 +43,21 @@ public class DocumentService : IDocumentService
                 return null;
         }
 
-        // ✅ Validate file type by extension only
+        //  Validate file type by extension only
         var fileExtension = Path.GetExtension(request.File.FileName)
                                 .ToLowerInvariant();
 
         if (!AllowedFileTypes.ContainsKey(fileExtension))
             return null;
 
-        // ✅ Check project exists
+        //  Check project exists
         var project = await _context.Projects
             .FirstOrDefaultAsync(p => p.Id == request.ProjectId && p.IsActive);
 
         if (project == null)
             return null;
 
-        // ✅ Save file to local storage
+        //  Save file to local storage
         var uploadFolder = Path.Combine(
             _storageBasePath, request.ProjectId.ToString());
         Directory.CreateDirectory(uploadFolder);
@@ -92,7 +92,7 @@ public class DocumentService : IDocumentService
         return MapToResponse(document);
     }
 
-    // ✅ Get Project Documents
+    //  Get Project Documents
     public async Task<List<DocumentResponseDto>> GetProjectDocumentsAsync(
         Guid projectId,
         string requesterId,
@@ -114,7 +114,7 @@ public class DocumentService : IDocumentService
         return documents.Select(MapToResponse).ToList();
     }
 
-    // ✅ Download Document
+    //  Download Document
     public async Task<(byte[] FileBytes, string ContentType, string FileName)?> DownloadDocumentAsync(
         Guid documentId,
         string requesterId,
@@ -141,7 +141,7 @@ public class DocumentService : IDocumentService
         return (fileBytes, document.ContentType, document.FileName);
     }
 
-    // ✅ Delete Document
+    //  Delete Document
     public async Task<bool> DeleteDocumentAsync(
         Guid documentId,
         string requesterId,

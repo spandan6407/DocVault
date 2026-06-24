@@ -2,6 +2,7 @@
 using DocVault.DocumentKnowledgeManagement.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 
 namespace DocVault.DocumentKnowledgeManagement.API.Controllers;
@@ -18,7 +19,7 @@ public class ProjectsController : ControllerBase
         _projectService = projectService;
     }
 
-    //  POST /api/projects
+    // POST /api/projects
     [HttpPost]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> CreateProject(
@@ -39,7 +40,7 @@ public class ProjectsController : ControllerBase
             result);
     }
 
-    //  GET /api/projects
+    // GET /api/projects
     [HttpGet]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> GetAllProjects()
@@ -48,18 +49,26 @@ public class ProjectsController : ControllerBase
         return Ok(result);
     }
 
-    //  GET /api/projects/{id}
+    // GET /api/projects/{id}
     [HttpGet("{id}")]
     [Authorize(Roles = "Admin,ProjectHead,User")]
     public async Task<IActionResult> GetProjectById(Guid id)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                  ?? string.Empty;
-        var role = User.FindFirstValue(ClaimTypes.Role)
+                  ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
                   ?? string.Empty;
 
-        var result = await _projectService.GetProjectByIdAsync(
-            id, userId, role);
+        var role = User.FindFirstValue(ClaimTypes.Role)
+                ?? string.Empty;
+
+        // Read projectId directly from JWT claim
+        var projectIdClaim = User.FindFirstValue("projectId");
+        Guid? userProjectId = string.IsNullOrEmpty(projectIdClaim)
+            ? null
+            : Guid.Parse(projectIdClaim);
+
+        var result = await _projectService
+            .GetProjectByIdAsync(id, userId, role, userProjectId);
 
         if (result == null)
             return NotFound(new { message = "Project not found or access denied." });
@@ -67,7 +76,7 @@ public class ProjectsController : ControllerBase
         return Ok(result);
     }
 
-    //  PUT /api/projects/{id}
+    // PUT /api/projects/{id}
     [HttpPut("{id}")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> UpdateProject(

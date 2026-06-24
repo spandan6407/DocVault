@@ -1,10 +1,9 @@
 ﻿using DocVault.DocumentKnowledgeManagement.Domain.Entities;
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace DocVault.DocumentKnowledgeManagement.Infrastructure.Identity;
 
-public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
+public class ApplicationDbContext : DbContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
         : base(options)
@@ -23,13 +22,6 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .HasMany(p => p.Documents)
             .WithOne(d => d.Project)
             .HasForeignKey(d => d.ProjectId);
-
-        // Project → Users
-        builder.Entity<ApplicationUser>()
-            .HasOne<Project>()
-            .WithMany()
-            .HasForeignKey(u => u.ProjectId)
-            .IsRequired(false);
 
         // Project Column Configs
         builder.Entity<Project>()
