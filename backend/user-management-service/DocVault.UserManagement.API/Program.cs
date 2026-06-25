@@ -4,6 +4,7 @@ using DocVault.UserManagement.Infrastructure.Messaging.Consumers;
 using DocVault.UserManagement.Infrastructure.Seeders;
 using DocVault.UserManagement.Infrastructure.Services;
 using MassTransit;
+using Microsoft.Extensions.Hosting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -12,11 +13,11 @@ using Scalar.AspNetCore;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddServiceDefaults();
 
 // ✅ Database
-builder.Services.AddDbContext<UserManagementDbContext>(options =>
-    options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.AddSqlServerDbContext<UserManagementDbContext>("DocVaultUserDB");
+
 
 // ✅ Identity
 builder.Services.AddIdentityCore<ApplicationUser>()
@@ -48,10 +49,10 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-// ✅ RabbitMQ with MassTransit (Community License)
+//  RabbitMQ with MassTransit (Community License)
 builder.Services.AddMassTransit(x =>
 {
-    // ✅ Register Consumers
+    //  Register Consumers
     x.AddConsumer<ProjectCreatedConsumer>();
 
     x.UsingRabbitMq((context, cfg) =>
@@ -69,7 +70,7 @@ builder.Services.AddMassTransit(x =>
     });
 });
 
-// ✅ Services
+//  Services
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IUserService, UserService>();
 
@@ -79,6 +80,13 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
+
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<UserManagementDbContext>();
+    await db.Database.MigrateAsync();
+}
 
 // ✅ Seeder
 using (var scope = app.Services.CreateScope())
@@ -104,6 +112,7 @@ if (app.Environment.IsDevelopment())
         options.Theme = ScalarTheme.Moon;
     });
 }
+
 
 app.UseHttpsRedirection();
 app.UseAuthentication();

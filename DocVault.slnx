@@ -1,4 +1,8 @@
 <Solution>
+  <Folder Name="/aspire/">
+    <Project Path="aspire/DocVault.AppHost/DocVault.AppHost.csproj" />
+    <Project Path="aspire/DocVault.ServiceDefaults/DocVault.ServiceDefaults.csproj" />
+  </Folder>
   <Folder Name="/backend/" />
   <Folder Name="/backend/document-knowledge-management/">
     <Project Path="backend/document-knowledge-management/DocVault.DocumentKnowledgeManagement.API/DocVault.DocumentKnowledgeManagement.API.csproj" />

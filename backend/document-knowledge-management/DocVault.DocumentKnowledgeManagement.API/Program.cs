@@ -9,11 +9,11 @@ using Scalar.AspNetCore;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddServiceDefaults();
 
 // Database
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlServer(
-        builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.AddSqlServerDbContext<ApplicationDbContext>("DocVaultDB");
+
 
 // JWT Validation Only — no Identity, no token generation
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
@@ -71,6 +71,12 @@ if (app.Environment.IsDevelopment())
         options.Title = "DocVault API";
         options.Theme = ScalarTheme.Moon;
     });
+}
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    await db.Database.MigrateAsync();
 }
 
 app.UseHttpsRedirection();

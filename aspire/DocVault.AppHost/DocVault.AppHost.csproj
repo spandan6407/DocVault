@@ -1,0 +1,21 @@
+﻿<Project Sdk="Aspire.AppHost.Sdk/13.4.6">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<UserSecretsId>docvault-apphost</UserSecretsId>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Aspire.Hosting.RabbitMQ" Version="9.3.0" />
+		<PackageReference Include="Aspire.Hosting.SqlServer" Version="13.4.6" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\backend\user-management-service\DocVault.UserManagement.API\DocVault.UserManagement.API.csproj" />
+		<ProjectReference Include="..\..\backend\document-knowledge-management\DocVault.DocumentKnowledgeManagement.API\DocVault.DocumentKnowledgeManagement.API.csproj" />
+	</ItemGroup>
+
+</Project>
