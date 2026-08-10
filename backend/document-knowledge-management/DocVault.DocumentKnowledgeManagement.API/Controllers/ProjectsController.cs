@@ -19,7 +19,7 @@ public class ProjectsController : ControllerBase
         _projectService = projectService;
     }
 
-    // POST /api/projects
+    // POST /api/projects... 
     [HttpPost]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> CreateProject(
@@ -29,6 +29,7 @@ public class ProjectsController : ControllerBase
             return BadRequest(ModelState);
 
         var createdBy = User.FindFirstValue(ClaimTypes.Email)
+                     ?? User.FindFirstValue(JwtRegisteredClaimNames.Email)
                      ?? string.Empty;
 
         var result = await _projectService.CreateProjectAsync(
@@ -40,9 +41,9 @@ public class ProjectsController : ControllerBase
             result);
     }
 
-    // GET /api/projects
+    // GET /api/projects.. 
     [HttpGet]
-    [Authorize(Roles = "Admin")]
+    [Authorize(Roles = "Admin,ProjectHead,User")]
     public async Task<IActionResult> GetAllProjects()
     {
         var result = await _projectService.GetAllProjectsAsync();
@@ -61,11 +62,14 @@ public class ProjectsController : ControllerBase
         var role = User.FindFirstValue(ClaimTypes.Role)
                 ?? string.Empty;
 
-        // Read projectId directly from JWT claim
+        // Read projectId directly from JWT claim (safe parse)
         var projectIdClaim = User.FindFirstValue("projectId");
-        Guid? userProjectId = string.IsNullOrEmpty(projectIdClaim)
-            ? null
-            : Guid.Parse(projectIdClaim);
+        Guid? userProjectId = null;
+        if (!string.IsNullOrEmpty(projectIdClaim) &&
+            Guid.TryParse(projectIdClaim, out var parsedProjectId))
+        {
+            userProjectId = parsedProjectId;
+        }
 
         var result = await _projectService
             .GetProjectByIdAsync(id, userId, role, userProjectId);

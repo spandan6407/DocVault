@@ -9,6 +9,7 @@ public class UserResponseDto
     public string Email { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public Guid? ProjectId { get; set; }
+    public string ProjectName { get; set; } = string.Empty;
     public bool IsActive { get; set; }
     public DateTime CreatedAt { get; set; }
 }

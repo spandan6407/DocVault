@@ -1,6 +1,4 @@
-﻿using System.Reflection.Metadata;
-
-namespace DocVault.DocumentKnowledgeManagement.Domain.Entities;
+﻿namespace DocVault.DocumentKnowledgeManagement.Domain.Entities;
 
 public class Project
 {
@@ -10,9 +8,8 @@ public class Project
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
-    public bool IsActive { get; set; }
-
+    public bool IsActive { get; set; } = true;
 
     public ICollection<Document> Documents { get; set; }
         = new List<Document>();
-}   
+}

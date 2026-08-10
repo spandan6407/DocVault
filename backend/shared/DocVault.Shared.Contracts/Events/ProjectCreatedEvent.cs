@@ -1,5 +1,8 @@
-﻿namespace DocVault.UserManagement.Application.Events.Consumed;
+using MassTransit;
 
+namespace DocVault.Shared.Contracts.Events;
+
+[EntityName("project-created")]
 public class ProjectCreatedEvent
 {
     public Guid ProjectId { get; set; }

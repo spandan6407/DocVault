@@ -1,4 +1,4 @@
-﻿using DocVault.UserManagement.Application.Events.Consumed;
+﻿using DocVault.Shared.Contracts.Events;
 using DocVault.UserManagement.Domain.Entities;
 using DocVault.UserManagement.Infrastructure.Identity;
 using MassTransit;
@@ -25,11 +25,11 @@ public class ProjectCreatedConsumer : IConsumer<ProjectCreatedEvent>
         var message = context.Message;
 
         _logger.LogInformation(
-            "✅ Project Created Event Received: {ProjectId} - {ProjectName}",
+            "Project Created Event Received: {ProjectId} - {ProjectName}",
             message.ProjectId,
             message.ProjectName);
 
-        // ✅ Check if project already exists
+        // Check if project already exists
         var exists = await _context.UserProjects
             .AnyAsync(up => up.ProjectId == message.ProjectId);
 
@@ -40,13 +40,17 @@ public class ProjectCreatedConsumer : IConsumer<ProjectCreatedEvent>
             return;
         }
 
-        //  Save project reference
+        // Find Admin user to use as UserId
+        var adminUser = await _context.Users
+            .FirstOrDefaultAsync(u => u.Email == message.CreatedBy);
+
+        // Save project reference
         var userProject = new UserProject
         {
             Id = Guid.NewGuid(),
             ProjectId = message.ProjectId,
             ProjectName = message.ProjectName,
-            UserId = message.CreatedBy,
+            UserId = adminUser?.Id ?? "system",
             Role = "Admin",
             AssignedAt = message.CreatedAt,
             IsActive = true
@@ -56,6 +60,6 @@ public class ProjectCreatedConsumer : IConsumer<ProjectCreatedEvent>
         await _context.SaveChangesAsync();
 
         _logger.LogInformation(
-            "✅ Project saved to UserDB: {ProjectId}", message.ProjectId);
+            "Project saved to UserDB: {ProjectId}", message.ProjectId);
     }
 }

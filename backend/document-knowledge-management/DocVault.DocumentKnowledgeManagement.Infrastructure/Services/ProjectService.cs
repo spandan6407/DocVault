@@ -1,10 +1,11 @@
 ﻿using DocVault.DocumentKnowledgeManagement.Application.DTOs.Projects;
-using DocVault.DocumentKnowledgeManagement.Application.Events.Published;
+using DocVault.Shared.Contracts.Events;
 using DocVault.DocumentKnowledgeManagement.Application.Interfaces;
 using DocVault.DocumentKnowledgeManagement.Domain.Entities;
 using DocVault.DocumentKnowledgeManagement.Infrastructure.Identity;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace DocVault.DocumentKnowledgeManagement.Infrastructure.Services;
 
@@ -12,13 +13,16 @@ public class ProjectService : IProjectService
 {
     private readonly ApplicationDbContext _context;
     private readonly IPublishEndpoint _publishEndpoint;
+    private readonly ILogger<ProjectService> _logger;
 
     public ProjectService(
         ApplicationDbContext context,
-        IPublishEndpoint publishEndpoint)
+        IPublishEndpoint publishEndpoint,
+        ILogger<ProjectService> logger)
     {
         _context = context;
         _publishEndpoint = publishEndpoint;
+        _logger = logger;
     }
 
     // Create Project
@@ -38,6 +42,10 @@ public class ProjectService : IProjectService
         _context.Projects.Add(project);
         await _context.SaveChangesAsync();
 
+        _logger.LogInformation(
+            "Publishing ProjectCreatedEvent for project {ProjectId} - {ProjectName}",
+            project.Id, project.Name);
+
         // Publish Event to RabbitMQ
         await _publishEndpoint.Publish(new ProjectCreatedEvent
         {
@@ -46,6 +54,10 @@ public class ProjectService : IProjectService
             CreatedBy = createdBy,
             CreatedAt = project.CreatedAt
         });
+
+        _logger.LogInformation(
+            "ProjectCreatedEvent published successfully for project {ProjectId}",
+            project.Id);
 
         return MapToResponse(project);
     }

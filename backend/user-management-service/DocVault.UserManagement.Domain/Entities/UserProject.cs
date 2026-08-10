@@ -8,5 +8,5 @@ public class UserProject
     public string ProjectName { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public DateTime AssignedAt { get; set; }
-    public bool IsActive { get; set; }
+    public bool IsActive { get; set; } = true;
 }

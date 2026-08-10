@@ -11,6 +11,9 @@
     <Project Path="backend/document-knowledge-management/DocVault.DocumentKnowledgeManagement.Infrastructure/DocVault.DocumentKnowledgeManagement.Infrastructure.csproj" />
     <Project Path="backend/document-knowledge-management/DocVault.DocumentKnowledgeManagement.Test/DocVault.DocumentKnowledgeManagement.Test.csproj" />
   </Folder>
+  <Folder Name="/backend/shared/">
+    <Project Path="backend/shared/DocVault.Shared.Contracts/DocVault.Shared.Contracts.csproj" />
+  </Folder>
   <Folder Name="/backend/user-management-service/">
     <Project Path="backend/user-management-service/DocVault.UserManagement.API/DocVault.UserManagement.API.csproj" />
     <Project Path="backend/user-management-service/DocVault.UserManagement.Application/DocVault.UserManagement.Application.csproj" />

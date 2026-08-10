@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DocVault.UserManagement.Domain\DocVault.UserManagement.Domain.csproj" />
+    <ProjectReference Include="..\..\shared\DocVault.Shared.Contracts\DocVault.Shared.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

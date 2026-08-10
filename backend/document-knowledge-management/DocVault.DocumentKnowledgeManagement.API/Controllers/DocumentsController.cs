@@ -57,6 +57,34 @@ public class DocumentsController : ControllerBase
         return Ok(result);
     }
 
+    //// POST /api/documents/compose
+    //[HttpPost("documents/compose")]
+    //[Authorize(Roles = "ProjectHead,User")]
+    //public async Task<IActionResult> ComposeDocument([FromBody] CreateTextDocumentDto request)
+    //{
+    //    if (!ModelState.IsValid)
+    //        return BadRequest(ModelState);
+
+    //    var uploadedBy = User.FindFirstValue(ClaimTypes.NameIdentifier)
+    //                         ?? string.Empty;
+
+    //    var uploaderRole = User.FindFirstValue(ClaimTypes.Role)
+    //                           ?? string.Empty;
+
+    //    var projectIdClaim = User.FindFirstValue("projectId");
+    //    Guid? uploaderProjectId = !string.IsNullOrEmpty(projectIdClaim)
+    //        ? Guid.Parse(projectIdClaim)
+    //        : null;
+
+    //    var result = await _documentService.CreateTextDocumentAsync(
+    //        request, uploadedBy, uploaderRole, uploaderProjectId);
+
+    //    if (result == null)
+    //        return BadRequest(new { message = "Create failed. Check project or content." });
+
+    //    return Ok(result);
+    //}
+
     // GET /api/projects/{projectId}/documents
     [HttpGet("projects/{projectId}/documents")]
     [Authorize(Roles = "Admin,ProjectHead,User")]
@@ -70,7 +98,7 @@ public class DocumentsController : ControllerBase
 
         var projectIdClaim = User.FindFirstValue("projectId");
 
-        // ✅ Fix: Handle empty string for Admin
+        //  Fix: Handle empty string for Admin
         Guid? requesterProjectId = !string.IsNullOrEmpty(projectIdClaim)
             ? Guid.Parse(projectIdClaim)
             : null;
@@ -122,6 +150,20 @@ public class DocumentsController : ControllerBase
             result.Value.FileName);
     }
 
+
+    [HttpGet("documents/search")]
+    [Authorize(Roles = "Admin,ProjectHead,User")]
+    public async Task<IActionResult> SearchDocuments([FromQuery] string q)
+    {
+        var requesterId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var requesterRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
+        var projectIdClaim = User.FindFirstValue("projectId");
+        Guid? requesterProjectId = !string.IsNullOrEmpty(projectIdClaim) ? Guid.Parse(projectIdClaim) : null;
+
+        var result = await _documentService.SearchDocumentsAsync(q, requesterId, requesterRole, requesterProjectId);
+        return Ok(result);
+    }
+
     // DELETE /api/documents/{id}
     [HttpDelete("documents/{id}")]
     [Authorize(Roles = "Admin,ProjectHead,User")]
@@ -158,5 +200,33 @@ public class DocumentsController : ControllerBase
         {
             message = "Document deleted successfully."
         });
+    }
+
+    // PUT /api/documents/{id}
+    [HttpPut("documents/{id}")]
+    [Authorize(Roles = "Admin,ProjectHead,User")]
+    public async Task<IActionResult> UpdateDocument(Guid id, [FromForm] UpdateDocumentDto request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var requesterId = User.FindFirstValue(ClaimTypes.NameIdentifier)
+                              ?? string.Empty;
+
+        var requesterRole = User.FindFirstValue(ClaimTypes.Role)
+                                ?? string.Empty;
+
+        var projectIdClaim = User.FindFirstValue("projectId");
+        Guid? requesterProjectId = !string.IsNullOrEmpty(projectIdClaim)
+            ? Guid.Parse(projectIdClaim)
+            : null;
+
+        var result = await _documentService.UpdateDocumentAsync(
+            id, request, requesterId, requesterRole, requesterProjectId);
+
+        if (result == null)
+            return BadRequest(new { message = "Update failed or access denied." });
+
+        return Ok(result);
     }
 }

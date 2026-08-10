@@ -19,7 +19,4 @@ public class CreateUserDto
 
     [Required]
     public Guid ProjectId { get; set; }
-
-    [Required]
-    public string Role { get; set; } = string.Empty;
 }

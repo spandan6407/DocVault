@@ -28,4 +28,23 @@ public interface IDocumentService
         string requesterId,
         string requesterRole,
         Guid? requesterProjectId);
+
+    Task<DocumentResponseDto?> UpdateDocumentAsync(
+        Guid documentId,
+        UpdateDocumentDto request,
+        string requesterId,
+        string requesterRole,
+        Guid? requesterProjectId);
+
+    //Task<DocumentResponseDto?> CreateTextDocumentAsync(
+    //    CreateTextDocumentDto request,
+    //    string uploadedBy,
+    //    string uploaderRole,
+    //    Guid? uploaderProjectId);
+
+    Task<List<DocumentResponseDto>> SearchDocumentsAsync(
+    string query,
+    string requesterId,
+    string requesterRole,
+    Guid? requesterProjectId);
 }

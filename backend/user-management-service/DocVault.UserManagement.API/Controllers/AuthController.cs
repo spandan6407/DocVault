@@ -5,7 +5,9 @@ using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
 
+
 namespace DocVault.UserManagement.API.Controllers;
+
 
 [ApiController]
 [Route("api/auth")]
@@ -17,6 +19,7 @@ public class AuthController : ControllerBase
     {
         _authService = authService;
     }
+
 
     [HttpPost("login")]
     [AllowAnonymous]
@@ -47,3 +50,5 @@ public class AuthController : ControllerBase
         return Ok(result);
     }
 }
+
+

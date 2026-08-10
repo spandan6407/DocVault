@@ -86,6 +86,8 @@ public class AuthService : IAuthService
             new(JwtRegisteredClaimNames.Email, user.Email!),
             new(JwtRegisteredClaimNames.Jti,   Guid.NewGuid().ToString()),
             new(ClaimTypes.Role,               role),
+            // Also include the standard JWT "role" claim to ensure other services map roles correctly
+            new("role",                       role),
             new("projectId", user.ProjectId?.ToString() ?? string.Empty),
             new("firstName", user.FirstName),
             new("lastName",  user.LastName)
