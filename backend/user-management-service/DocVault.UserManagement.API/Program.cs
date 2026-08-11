@@ -99,7 +99,7 @@ builder.Services.AddHttpContextAccessor();
 // Register claims transformer to normalize role claims
 builder.Services.AddScoped<Microsoft.AspNetCore.Authentication.IClaimsTransformation, DocVault.UserManagement.API.Infrastructure.ClaimsTransformer>();
 
-// RabbitMQ with MassTransit
+// RabbitMQ with MassTransit....
 builder.Services.AddMassTransit(x =>
 {
     x.AddConsumer<ProjectCreatedConsumer>();
@@ -207,45 +207,7 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Backfill: ensure users with ProjectId have a corresponding UserProject entry
-using (var scope = app.Services.CreateScope())
-{
-    try
-    {
-        var services = scope.ServiceProvider;
-        var db = services.GetRequiredService<UserManagementDbContext>();
-        var logger = services.GetRequiredService<ILogger<Program>>();
 
-        var usersWithProject = await db.Users
-            .Where(u => u.ProjectId != null)
-            .ToListAsync();
-
-        foreach (var u in usersWithProject)
-        {
-            var exists = await db.UserProjects.AnyAsync(up => up.ProjectId == u.ProjectId && up.UserId == u.Id);
-            if (!exists)
-            {
-                db.UserProjects.Add(new DocVault.UserManagement.Domain.Entities.UserProject
-                {
-                    Id = Guid.NewGuid(),
-                    ProjectId = u.ProjectId!.Value,
-                    ProjectName = string.Empty,
-                    UserId = u.Id,
-                    Role = "User",
-                    AssignedAt = DateTime.UtcNow,
-                    IsActive = true
-                });
-            }
-        }
-        await db.SaveChangesAsync();
-        logger.LogInformation("Backfilled UserProject entries for existing users.");
-    }
-    catch (Exception ex)
-    {
-        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        logger.LogWarning(ex, "Failed to backfill UserProject entries.");
-    }
-}
 
 if (app.Environment.IsDevelopment())
 {

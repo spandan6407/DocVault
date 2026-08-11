@@ -19,11 +19,9 @@ public class ProjectsController : ControllerBase
         _projectService = projectService;
     }
 
-    // POST /api/projects... 
     [HttpPost]
     [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> CreateProject(
-        [FromBody] CreateProjectDto request)
+    public async Task<IActionResult> CreateProject([FromBody] CreateProjectDto request)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
@@ -32,16 +30,11 @@ public class ProjectsController : ControllerBase
                      ?? User.FindFirstValue(JwtRegisteredClaimNames.Email)
                      ?? string.Empty;
 
-        var result = await _projectService.CreateProjectAsync(
-            request, createdBy);
+        var result = await _projectService.CreateProjectAsync(request, createdBy);
 
-        return CreatedAtAction(
-            nameof(GetProjectById),
-            new { id = result.Id },
-            result);
+        return CreatedAtAction(nameof(GetProjectById), new { id = result.Id }, result);
     }
 
-    // GET /api/projects.. 
     [HttpGet]
     [Authorize(Roles = "Admin,ProjectHead,User")]
     public async Task<IActionResult> GetAllProjects()
@@ -59,20 +52,17 @@ public class ProjectsController : ControllerBase
                   ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
                   ?? string.Empty;
 
-        var role = User.FindFirstValue(ClaimTypes.Role)
-                ?? string.Empty;
+        var isAdmin = User.HasClaim(c => (c.Type == ClaimTypes.Role || c.Type == "role") && c.Value == "Admin");
 
-        // Read projectId directly from JWT claim (safe parse)
-        var projectIdClaim = User.FindFirstValue("projectId");
-        Guid? userProjectId = null;
-        if (!string.IsNullOrEmpty(projectIdClaim) &&
-            Guid.TryParse(projectIdClaim, out var parsedProjectId))
-        {
-            userProjectId = parsedProjectId;
-        }
+        // Look up this specific project's claim directly — a user can hold a
+        // different role per project, so there's no single "role"/"projectId" pair anymore.
+        var roleInThisProject = User.FindFirstValue($"project:{id}");
+        var isMember = isAdmin || !string.IsNullOrEmpty(roleInThisProject);
 
-        var result = await _projectService
-            .GetProjectByIdAsync(id, userId, role, userProjectId);
+        if (!isMember)
+            return NotFound(new { message = "Project not found or access denied." });
+
+        var result = await _projectService.GetProjectByIdAsync(id, userId, roleInThisProject ?? "Admin", id);
 
         if (result == null)
             return NotFound(new { message = "Project not found or access denied." });
@@ -80,11 +70,9 @@ public class ProjectsController : ControllerBase
         return Ok(result);
     }
 
-    // PUT /api/projects/{id}
     [HttpPut("{id}")]
     [Authorize(Roles = "Admin")]
-    public async Task<IActionResult> UpdateProject(
-        Guid id, [FromBody] UpdateProjectDto request)
+    public async Task<IActionResult> UpdateProject(Guid id, [FromBody] UpdateProjectDto request)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);

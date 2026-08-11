@@ -9,7 +9,6 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System.Net.Http;
-using Microsoft.AspNetCore.Http;
 
 namespace DocVault.UserManagement.Infrastructure.Services;
 
@@ -47,17 +46,42 @@ public class UserService : IUserService
         return client;
     }
 
-    // Create User
+    private async Task<string> LookupProjectNameAsync(Guid projectId)
+    {
+        try
+        {
+            var client = CreateAuthorizedDocumentClient();
+            var response = await client.GetAsync($"/api/projects/{projectId}");
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                var proj = System.Text.Json.JsonSerializer.Deserialize<ProjectNameLookup>(content,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                return proj?.Name ?? string.Empty;
+            }
+            _logger.LogWarning("Project lookup failed: {Status}", response.StatusCode);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Project lookup threw exception");
+        }
+        return string.Empty;
+    }
+
+    // Create User — joins each given project as "User"
     public async Task<UserResponseDto?> CreateUserAsync(CreateUserDto request, bool bypassProjectCheck = false)
     {
-        var projectExists = true;
+        if (request.ProjectIds == null || request.ProjectIds.Count == 0)
+            return null;
+
         if (!bypassProjectCheck)
         {
-            projectExists = await _context.UserProjects
-                .AnyAsync(up => up.ProjectId == request.ProjectId && up.IsActive);
-
-            if (!projectExists)
-                return null;
+            foreach (var projectId in request.ProjectIds)
+            {
+                var exists = await _context.UserProjects.AnyAsync(up => up.ProjectId == projectId && up.IsActive);
+                if (!exists)
+                    return null;
+            }
         }
 
         var user = new ApplicationUser
@@ -66,7 +90,6 @@ public class UserService : IUserService
             LastName = request.LastName,
             Email = request.Email,
             UserName = request.Email,
-            ProjectId = request.ProjectId,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             EmailConfirmed = true
@@ -75,77 +98,54 @@ public class UserService : IUserService
         var result = await _userManager.CreateAsync(user, request.Password);
         if (!result.Succeeded)
         {
-            try
-            {
-                var errors = string.Join("; ", result.Errors.Select(e => e.Code + ":" + e.Description));
-                _logger.LogWarning("User creation failed for {Email}: {Errors}", request.Email, errors);
-            }
-            catch { }
+            var errors = string.Join("; ", result.Errors.Select(e => e.Code + ":" + e.Description));
+            _logger.LogWarning("User creation failed for {Email}: {Errors}", request.Email, errors);
             return null;
         }
 
         await _userManager.AddToRoleAsync(user, "User");
 
-        try
+        foreach (var projectId in request.ProjectIds.Distinct())
         {
-            var projectName = string.Empty;
-            if (request.ProjectId != Guid.Empty)
+            try
             {
-                try
+                var projectName = await LookupProjectNameAsync(projectId);
+                _context.UserProjects.Add(new UserProject
                 {
-                    var client = CreateAuthorizedDocumentClient();
-                    var response = await client.GetAsync($"/api/projects/{request.ProjectId}");
-                    if (response.IsSuccessStatusCode)
-                    {
-                        var content = await response.Content.ReadAsStringAsync();
-                        var proj = System.Text.Json.JsonSerializer.Deserialize<ProjectNameLookup>(content, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                        projectName = proj?.Name ?? string.Empty;
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Project lookup failed: {Status}", response.StatusCode);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Project lookup threw exception");
-                }
+                    Id = Guid.NewGuid(),
+                    ProjectId = projectId,
+                    ProjectName = projectName,
+                    UserId = user.Id,
+                    Role = "User",
+                    AssignedAt = DateTime.UtcNow,
+                    IsActive = true
+                });
             }
-
-            var userProject = new UserProject
+            catch (Exception ex)
             {
-                Id = Guid.NewGuid(),
-                ProjectId = request.ProjectId,
-                ProjectName = projectName,
+                _logger.LogWarning(ex, "Failed to persist UserProject for user {UserId} project {ProjectId}", user.Id, projectId);
+            }
+        }
+        await _context.SaveChangesAsync();
+
+        foreach (var projectId in request.ProjectIds.Distinct())
+        {
+            await _publishEndpoint.Publish(new UserCreatedEvent
+            {
                 UserId = user.Id,
+                Email = user.Email!,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
                 Role = "User",
-                AssignedAt = DateTime.UtcNow,
-                IsActive = true
-            };
-
-            _context.UserProjects.Add(userProject);
-            await _context.SaveChangesAsync();
+                ProjectId = projectId,
+                CreatedAt = user.CreatedAt
+            });
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to persist UserProject for user {UserId}", user.Id);
-        }
-
-        await _publishEndpoint.Publish(new UserCreatedEvent
-        {
-            UserId = user.Id,
-            Email = user.Email!,
-            FirstName = user.FirstName,
-            LastName = user.LastName,
-            Role = "User",
-            ProjectId = request.ProjectId,
-            CreatedAt = user.CreatedAt
-        });
 
         return await MapToResponseAsync(user);
     }
 
-    public async Task<bool> DeleteUserAsync(string userIdToDelete, string requesterId, string requesterRole, Guid? requesterProjectId)
+    public async Task<bool> DeleteUserAsync(string userIdToDelete, string requesterId, string requesterRole, List<Guid> requesterHeadProjectIds)
     {
         var user = await _userManager.FindByIdAsync(userIdToDelete);
         if (user == null || !user.IsActive)
@@ -164,7 +164,13 @@ public class UserService : IUserService
             if (user.Id == requesterId)
                 return false;
 
-            if (requesterProjectId == null || user.ProjectId != requesterProjectId)
+            if (requesterHeadProjectIds == null || requesterHeadProjectIds.Count == 0)
+                return false;
+
+            // Target must be a member of at least one project the requester heads.
+            var isMemberOfAny = await _context.UserProjects.AnyAsync(up =>
+                up.UserId == user.Id && requesterHeadProjectIds.Contains(up.ProjectId) && up.IsActive);
+            if (!isMemberOfAny)
                 return false;
         }
         else
@@ -211,6 +217,8 @@ public class UserService : IUserService
         }).ToList();
     }
 
+    // Users belonging to a given project — role returned is that project's row role,
+    // which may differ from the same user's role in another project.
     public async Task<List<UserResponseDto>> GetUsersByProjectAsync(
         Guid projectId,
         string requesterId,
@@ -218,15 +226,19 @@ public class UserService : IUserService
     {
         if (requesterRole == "ProjectHead")
         {
-            var requester = await _context.Users
-                .FirstOrDefaultAsync(u => u.Id == requesterId);
-
-            if (requester == null || requester.ProjectId != projectId)
+            var requesterIsHeadHere = await _context.UserProjects.AnyAsync(up =>
+                up.UserId == requesterId && up.ProjectId == projectId && up.Role == "ProjectHead" && up.IsActive);
+            if (!requesterIsHeadHere)
                 return new List<UserResponseDto>();
         }
 
+        var memberUserIds = await _context.UserProjects
+            .Where(up => up.ProjectId == projectId && up.IsActive)
+            .Select(up => up.UserId)
+            .ToListAsync();
+
         var users = await _context.Users
-            .Where(u => u.ProjectId == projectId && u.IsActive)
+            .Where(u => memberUserIds.Contains(u.Id) && u.IsActive)
             .OrderByDescending(u => u.CreatedAt)
             .ToListAsync();
 
@@ -237,6 +249,7 @@ public class UserService : IUserService
         return result;
     }
 
+    // Assign ProjectHead for ONE project only — does not touch the user's role in any other project.
     public async Task<UserResponseDto?> AssignProjectHeadAsync(
         string userId,
         AssignProjectHeadDto request)
@@ -245,23 +258,41 @@ public class UserService : IUserService
         if (user == null || !user.IsActive)
             return null;
 
-        if (user.ProjectId != request.ProjectId)
-            return null;
+        var membership = await _context.UserProjects.FirstOrDefaultAsync(up =>
+            up.UserId == userId && up.ProjectId == request.ProjectId && up.IsActive);
+        if (membership == null)
+            return null; // user must already belong to this project
 
-        var existingHeads = await _userManager.GetUsersInRoleAsync("ProjectHead");
-        var existingHead = existingHeads.FirstOrDefault(u => u.ProjectId == request.ProjectId);
+        var existingHead = await _context.UserProjects.FirstOrDefaultAsync(up =>
+            up.ProjectId == request.ProjectId && up.Role == "ProjectHead" && up.IsActive);
 
         string? oldProjectHeadId = null;
 
-        if (existingHead != null)
+        if (existingHead != null && existingHead.UserId != userId)
         {
-            oldProjectHeadId = existingHead.Id;
-            await _userManager.RemoveFromRoleAsync(existingHead, "ProjectHead");
-            await _userManager.AddToRoleAsync(existingHead, "User");
+            oldProjectHeadId = existingHead.UserId;
+            existingHead.Role = "User";
+            _context.UserProjects.Update(existingHead);
+
+            // Only strip the global ProjectHead Identity role if they're not Head anywhere else.
+            var stillHeadElsewhere = await _context.UserProjects.AnyAsync(up =>
+                up.UserId == existingHead.UserId && up.ProjectId != request.ProjectId &&
+                up.Role == "ProjectHead" && up.IsActive);
+
+            if (!stillHeadElsewhere)
+            {
+                var oldHeadUser = await _userManager.FindByIdAsync(existingHead.UserId);
+                if (oldHeadUser != null)
+                {
+                    await _userManager.RemoveFromRoleAsync(oldHeadUser, "ProjectHead");
+                    if (!await _userManager.IsInRoleAsync(oldHeadUser, "User"))
+                        await _userManager.AddToRoleAsync(oldHeadUser, "User");
+                }
+            }
 
             await _publishEndpoint.Publish(new UserRoleAssignedEvent
             {
-                UserId = existingHead.Id,
+                UserId = existingHead.UserId,
                 OldRole = "ProjectHead",
                 NewRole = "User",
                 ProjectId = request.ProjectId,
@@ -269,61 +300,14 @@ public class UserService : IUserService
             });
         }
 
-        var currentRoles = await _userManager.GetRolesAsync(user);
-        await _userManager.RemoveFromRolesAsync(user, currentRoles);
-        await _userManager.AddToRoleAsync(user, "ProjectHead");
+        membership.Role = "ProjectHead";
+        membership.AssignedAt = DateTime.UtcNow;
+        _context.UserProjects.Update(membership);
+        await _context.SaveChangesAsync();
 
-        try
-        {
-            var up = await _context.UserProjects
-                .FirstOrDefaultAsync(x => x.UserId == user.Id && x.ProjectId == request.ProjectId);
-
-            var projectName = string.Empty;
-            try
-            {
-                var client = CreateAuthorizedDocumentClient();
-                var response = await client.GetAsync($"/api/projects/{request.ProjectId}");
-                if (response.IsSuccessStatusCode)
-                {
-                    var content = await response.Content.ReadAsStringAsync();
-                    var proj = System.Text.Json.JsonSerializer.Deserialize<ProjectNameLookup>(content, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                    projectName = proj?.Name ?? string.Empty;
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Project lookup threw exception");
-            }
-
-            if (up == null)
-            {
-                up = new UserProject
-                {
-                    Id = Guid.NewGuid(),
-                    ProjectId = request.ProjectId,
-                    ProjectName = projectName,
-                    UserId = user.Id,
-                    Role = "ProjectHead",
-                    AssignedAt = DateTime.UtcNow,
-                    IsActive = true
-                };
-                _context.UserProjects.Add(up);
-            }
-            else
-            {
-                up.Role = "ProjectHead";
-                up.AssignedAt = DateTime.UtcNow;
-                up.IsActive = true;
-                if (!string.IsNullOrEmpty(projectName))
-                    up.ProjectName = projectName;
-                _context.UserProjects.Update(up);
-            }
-            await _context.SaveChangesAsync();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to ensure UserProject record when assigning project head for user {UserId}", user.Id);
-        }
+        // Ensure the global Identity role reflects ProjectHead-in-at-least-one-project.
+        if (!await _userManager.IsInRoleAsync(user, "ProjectHead"))
+            await _userManager.AddToRoleAsync(user, "ProjectHead");
 
         await _publishEndpoint.Publish(new ProjectHeadAssignedEvent
         {
@@ -338,41 +322,31 @@ public class UserService : IUserService
 
     private async Task<UserResponseDto> MapToResponseAsync(ApplicationUser user)
     {
-        var roles = await _userManager.GetRolesAsync(user);
-        var role = roles.FirstOrDefault() ?? string.Empty;
+        var rows = await _context.UserProjects
+            .Where(up => up.UserId == user.Id && up.IsActive)
+            .ToListAsync();
 
-        var projectName = string.Empty;
-        if (user.ProjectId.HasValue)
+        var projects = new List<ProjectMembershipDto>();
+        foreach (var up in rows)
         {
-            var up = await _context.UserProjects.FirstOrDefaultAsync(u => u.ProjectId == user.ProjectId && u.IsActive);
-            projectName = up?.ProjectName ?? string.Empty;
-
+            var projectName = up.ProjectName;
             if (string.IsNullOrEmpty(projectName))
             {
-                try
+                projectName = await LookupProjectNameAsync(up.ProjectId);
+                if (!string.IsNullOrEmpty(projectName))
                 {
-                    var client = CreateAuthorizedDocumentClient();
-                    var response = await client.GetAsync($"/api/projects/{user.ProjectId.Value}");
-                    if (response.IsSuccessStatusCode)
-                    {
-                        var content = await response.Content.ReadAsStringAsync();
-                        var proj = System.Text.Json.JsonSerializer.Deserialize<ProjectNameLookup>(content, new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                        projectName = proj?.Name ?? string.Empty;
-
-                        if (!string.IsNullOrEmpty(projectName) && up != null)
-                        {
-                            up.ProjectName = projectName;
-                            _context.UserProjects.Update(up);
-                            await _context.SaveChangesAsync();
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Project lookup threw exception in MapToResponseAsync");
+                    up.ProjectName = projectName;
+                    _context.UserProjects.Update(up);
                 }
             }
+            projects.Add(new ProjectMembershipDto
+            {
+                ProjectId = up.ProjectId,
+                ProjectName = projectName,
+                Role = up.Role
+            });
         }
+        await _context.SaveChangesAsync();
 
         return new UserResponseDto
         {
@@ -381,11 +355,9 @@ public class UserService : IUserService
             LastName = user.LastName,
             FullName = $"{user.FirstName} {user.LastName}",
             Email = user.Email!,
-            Role = role,
-            ProjectId = user.ProjectId,
             IsActive = user.IsActive,
             CreatedAt = user.CreatedAt,
-            ProjectName = projectName
+            Projects = projects
         };
     }
 
@@ -395,34 +367,25 @@ public class UserService : IUserService
         public string Name { get; set; } = string.Empty;
     }
 
-    // Create a project change request (User/ProjectHead)
+    // Create a project change request — now "join a new project", not "replace the only one".
     public async Task<bool> CreateProjectChangeRequestAsync(string userId, Guid requestedProjectId)
     {
         var user = await _userManager.FindByIdAsync(userId);
         if (user == null || !user.IsActive) return false;
 
-        // Do not allow requests to the same project
-        if (user.ProjectId.HasValue && user.ProjectId.Value == requestedProjectId)
+        var alreadyMember = await _context.UserProjects.AnyAsync(up =>
+            up.UserId == userId && up.ProjectId == requestedProjectId && up.IsActive);
+        if (alreadyMember)
             return false;
 
-        // Optional: verify target project exists by calling Document service. If the lookup fails due to
-        // transient errors, allow the request to proceed (we don't want to block users if the doc service
-        // is temporarily unavailable). Only reject if the project is confirmed missing (404).
         try
         {
             var client = CreateAuthorizedDocumentClient();
             var resp = await client.GetAsync($"/api/projects/{requestedProjectId}");
-            if (!resp.IsSuccessStatusCode)
+            if (!resp.IsSuccessStatusCode && resp.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
-                if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
-                {
-                    _logger.LogWarning("Requested project {ProjectId} not found when creating change request for user {UserId}", requestedProjectId, userId);
-                    return false;
-                }
-                else
-                {
-                    _logger.LogWarning("Project lookup returned {Status} when creating change request for user {UserId}, proceeding anyway", resp.StatusCode, userId);
-                }
+                _logger.LogWarning("Requested project {ProjectId} not found for user {UserId}", requestedProjectId, userId);
+                return false;
             }
         }
         catch (Exception ex)
@@ -434,7 +397,7 @@ public class UserService : IUserService
         {
             Id = Guid.NewGuid(),
             UserId = userId,
-            CurrentProjectId = user.ProjectId ?? Guid.Empty,
+            CurrentProjectId = Guid.Empty, // no longer meaningful with multi-project membership; kept for schema compatibility
             RequestedProjectId = requestedProjectId,
             Status = "Pending",
             RequestedAt = DateTime.UtcNow
@@ -502,22 +465,36 @@ public class UserService : IUserService
         return true;
     }
 
+    // Now: JOIN newProjectId as "User" — does not remove any existing membership.
+    // (If you want "replace membership X with Y" semantics instead, tell me which
+    // project is being left and I'll add a LeaveProjectAsync alongside this.)
     public async Task<bool> AdminChangeUserProjectAsync(string userId, Guid newProjectId)
     {
         var user = await _userManager.FindByIdAsync(userId);
         if (user == null || !user.IsActive) return false;
 
-        var roles = await _userManager.GetRolesAsync(user);
-        if (roles.Contains("ProjectHead"))
-        {
-            // Demote to User in new project
-            await _userManager.RemoveFromRoleAsync(user, "ProjectHead");
-            await _userManager.AddToRoleAsync(user, "User");
-        }
+        var alreadyMember = await _context.UserProjects.AnyAsync(up =>
+            up.UserId == userId && up.ProjectId == newProjectId && up.IsActive);
+        if (alreadyMember) return true;
 
-        user.ProjectId = newProjectId;
+        var projectName = await LookupProjectNameAsync(newProjectId);
+        _context.UserProjects.Add(new UserProject
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = newProjectId,
+            ProjectName = projectName,
+            UserId = userId,
+            Role = "User",
+            AssignedAt = DateTime.UtcNow,
+            IsActive = true
+        });
+
+        if (!await _userManager.IsInRoleAsync(user, "User"))
+            await _userManager.AddToRoleAsync(user, "User");
+
         user.UpdatedAt = DateTime.UtcNow;
         await _userManager.UpdateAsync(user);
+        await _context.SaveChangesAsync();
         return true;
     }
 }

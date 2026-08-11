@@ -16,7 +16,7 @@ public static class DataSeeder
         var logger = serviceProvider
             .GetRequiredService<ILogger<UserManagementDbContext>>();
 
-        //  Seed Roles
+        // Seed Roles
         string[] roles = { "Admin", "ProjectHead", "User" };
         foreach (var role in roles)
         {
@@ -27,13 +27,11 @@ public static class DataSeeder
             }
         }
 
-        //  Seed Admin
+        // Seed Admin
         const string adminEmail = "admin@docvault.com";
         const string adminPassword = "Admin@DocVault#2024";
 
-        var existingAdmin = await userManager
-            .FindByEmailAsync(adminEmail);
-
+        var existingAdmin = await userManager.FindByEmailAsync(adminEmail);
         if (existingAdmin != null)
             return;
 
@@ -43,20 +41,18 @@ public static class DataSeeder
             LastName = "Admin",
             Email = adminEmail,
             UserName = adminEmail,
-            ProjectId = null,
+            // ProjectId removed — Admin has no project membership
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             EmailConfirmed = true
         };
 
-        var result = await userManager
-            .CreateAsync(adminUser, adminPassword);
+        var result = await userManager.CreateAsync(adminUser, adminPassword);
 
         if (result.Succeeded)
         {
             await userManager.AddToRoleAsync(adminUser, "Admin");
-            logger.LogInformation(
-                "✅ Admin created: {Email}", adminEmail);
+            logger.LogInformation("Admin created: {Email}", adminEmail);
         }
     }
 }

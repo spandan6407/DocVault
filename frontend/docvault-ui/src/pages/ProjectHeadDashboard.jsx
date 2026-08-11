@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../components/layout/DashboardLayout";
 import DocumentCard from "../components/DocumentCard";
 import DocumentEditor from "../components/DocumentEditor";
@@ -18,10 +18,22 @@ import {
     PageTitle,
     Section,
     SectionTitle,
+    Select,
 } from "../styles/shared";
 
 export default function ProjectHeadDashboard() {
     const { user } = useAuth();
+
+    // A ProjectHead can now be head of multiple projects — let them pick which one to manage.
+    const headProjects = useMemo(
+        () => (user.projects || []).filter((p) => p.role === "ProjectHead"),
+        [user.projects]
+    );
+
+    const [activeProjectId, setActiveProjectId] = useState(
+        () => headProjects[0]?.projectId ?? null
+    );
+
     const [documents, setDocuments] = useState([]);
     const [members, setMembers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -35,18 +47,19 @@ export default function ProjectHeadDashboard() {
     const [requestSent, setRequestSent] = useState(false);
 
     const loadAll = useCallback(async () => {
+        if (!activeProjectId) return;
         setLoading(true);
         try {
             const [docsRes, membersRes] = await Promise.all([
-                docApi.get(`/projects/${user.projectId}/documents`),
-                userApi.get(`/projects/${user.projectId}/users`),
+                docApi.get(`/projects/${activeProjectId}/documents`),
+                userApi.get(`/projects/${activeProjectId}/users`),
             ]);
             setDocuments(docsRes.data);
             setMembers(membersRes.data);
         } finally {
             setLoading(false);
         }
-    }, [user.projectId]);
+    }, [activeProjectId]);
 
     useEffect(() => {
         queueMicrotask(loadAll);
@@ -55,13 +68,13 @@ export default function ProjectHeadDashboard() {
     const handleUpload = useCallback(
         async (e) => {
             e.preventDefault();
-            if (!file) return;
+            if (!file || !activeProjectId) return;
             setUploading(true);
             try {
                 const form = new FormData();
                 form.append("File", file);
                 form.append("Title", uploadTitle || file.name);
-                form.append("ProjectId", user.projectId);
+                form.append("ProjectId", activeProjectId);
                 await docApi.post("/documents", form, {
                     headers: { "Content-Type": "multipart/form-data" },
                 });
@@ -72,7 +85,7 @@ export default function ProjectHeadDashboard() {
                 setUploading(false);
             }
         },
-        [file, uploadTitle, user.projectId, loadAll]
+        [file, uploadTitle, activeProjectId, loadAll]
     );
 
     const handleRemoveMember = useCallback(
@@ -95,10 +108,30 @@ export default function ProjectHeadDashboard() {
         [requestedProjectId]
     );
 
+    if (!activeProjectId) {
+        return (
+            <DashboardLayout>
+                <EmptyState>You are not assigned as Project Head of any project.</EmptyState>
+            </DashboardLayout>
+        );
+    }
+
     return (
         <DashboardLayout>
             <PageHeader>
                 <PageTitle>Project Head Dashboard</PageTitle>
+                {headProjects.length > 1 && (
+                    <Select
+                        value={activeProjectId}
+                        onChange={(e) => setActiveProjectId(e.target.value)}
+                    >
+                        {headProjects.map((p) => (
+                            <option key={p.projectId} value={p.projectId}>
+                                {p.projectName || p.projectId}
+                            </option>
+                        ))}
+                    </Select>
+                )}
             </PageHeader>
 
             <Section>
@@ -114,7 +147,12 @@ export default function ProjectHeadDashboard() {
                     </Field>
                     <Field>
                         <Label htmlFor="ph-upload-file">File</Label>
-                        <input id="ph-upload-file" type="file" onChange={(e) => setFile(e.target.files[0])} required />
+                        <input
+                            id="ph-upload-file"
+                            type="file"
+                            onChange={(e) => setFile(e.target.files[0])}
+                            required
+                        />
                     </Field>
                     <Button type="submit" disabled={uploading || !file}>
                         {uploading ? "Uploading..." : "Upload"}
@@ -124,7 +162,7 @@ export default function ProjectHeadDashboard() {
 
             <Section>
                 <SectionTitle>Write a document</SectionTitle>
-                <DocumentEditor onCreated={loadAll} />
+                <DocumentEditor onCreated={loadAll} activeProjectId={activeProjectId} />
             </Section>
 
             <Section id="documents">
@@ -137,7 +175,6 @@ export default function ProjectHeadDashboard() {
                     <List>
                         {documents.map((doc) => (
                             <li key={doc.id}>
-                                {/* ProjectHead can manage any document in their own project */}
                                 <DocumentCard
                                     document={doc}
                                     canEdit
@@ -161,7 +198,11 @@ export default function ProjectHeadDashboard() {
                             <ListRow key={m.id}>
                                 <div>
                                     <strong>{m.firstName} {m.lastName}</strong>{" "}
-                                    <Badge>{m.role}</Badge>
+                                    {(m.projects || [])
+                                        .filter((p) => p.projectId === activeProjectId)
+                                        .map((p) => (
+                                            <Badge key={p.projectId}>{p.role}</Badge>
+                                        ))}
                                     <div style={{ color: "#6B778C", fontSize: 12 }}>{m.email}</div>
                                 </div>
                                 {m.id !== user.id && (
@@ -176,7 +217,7 @@ export default function ProjectHeadDashboard() {
             </Section>
 
             <Section>
-                <SectionTitle>Request a project change</SectionTitle>
+                <SectionTitle>Request to join another project</SectionTitle>
                 {requestSent ? (
                     <EmptyState>Request submitted — an admin will review it.</EmptyState>
                 ) : (
@@ -195,7 +236,9 @@ export default function ProjectHeadDashboard() {
                 )}
             </Section>
 
-            {viewingDoc && <DocumentViewer document={viewingDoc} onClose={() => setViewingDoc(null)} />}
+            {viewingDoc && (
+                <DocumentViewer document={viewingDoc} onClose={() => setViewingDoc(null)} />
+            )}
         </DashboardLayout>
     );
 }

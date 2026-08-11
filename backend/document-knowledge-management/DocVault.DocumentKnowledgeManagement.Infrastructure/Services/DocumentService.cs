@@ -1,13 +1,10 @@
 ﻿using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using DocumentFormat.OpenXml.Packaging;
-using OpenXmlWordDoc = DocumentFormat.OpenXml.Wordprocessing.Document;
 using DomainDocument = DocVault.DocumentKnowledgeManagement.Domain.Entities.Document;
 using DocVault.DocumentKnowledgeManagement.Application.DTOs.Documents;
 using DocVault.DocumentKnowledgeManagement.Application.Interfaces;
 using DocVault.DocumentKnowledgeManagement.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
-using System.IO;
 
 namespace DocVault.DocumentKnowledgeManagement.Infrastructure.Services;
 
@@ -28,10 +25,10 @@ public class DocumentService : IDocumentService
     };
 
     public DocumentService(
-    ApplicationDbContext context,
-    BlobServiceClient blobServiceClient,
-    ITextExtractionService textExtractionService,
-    IAiService aiService)
+        ApplicationDbContext context,
+        BlobServiceClient blobServiceClient,
+        ITextExtractionService textExtractionService,
+        IAiService aiService)
     {
         _context = context;
         _blobServiceClient = blobServiceClient;
@@ -39,33 +36,32 @@ public class DocumentService : IDocumentService
         _aiService = aiService;
     }
 
+    // ── Upload ────────────────────────────────────────────────────────────────
+    // BR-006: Admin explicitly cannot upload (enforced at controller via [Authorize(Roles="ProjectHead,User")]).
+    // uploaderRole is the caller's role *in the specific project* from the "project:{id}" claim.
     public async Task<DocumentResponseDto?> UploadDocumentAsync(
-    UploadDocumentDto request,
-    string uploadedBy,
-    string uploaderRole,
-    Guid? uploaderProjectId)
+        UploadDocumentDto request,
+        string uploadedBy,
+        string uploaderRole,
+        Guid projectId)
     {
-        if (uploaderRole != "Admin")
-        {
-            if (uploaderProjectId != request.ProjectId)
-                return null;
-        }
+        // uploaderRole must be ProjectHead or User in this project — anything else is rejected.
+        if (uploaderRole != "ProjectHead" && uploaderRole != "User")
+            return null;
 
         var fileExtension = Path.GetExtension(request.File.FileName).ToLowerInvariant();
-
         if (!AllowedFileTypes.ContainsKey(fileExtension))
             return null;
 
         var project = await _context.Projects
-            .FirstOrDefaultAsync(p => p.Id == request.ProjectId && p.IsActive);
-
+            .FirstOrDefaultAsync(p => p.Id == projectId && p.IsActive);
         if (project == null)
             return null;
 
         var containerClient = _blobServiceClient.GetBlobContainerClient(ContainerName);
         await containerClient.CreateIfNotExistsAsync(PublicAccessType.None);
 
-        var uniqueBlobName = $"{request.ProjectId}/{Guid.NewGuid()}_{request.File.FileName}";
+        var uniqueBlobName = $"{projectId}/{Guid.NewGuid()}_{request.File.FileName}";
         var blobClient = containerClient.GetBlobClient(uniqueBlobName);
 
         using (var stream = request.File.OpenReadStream())
@@ -85,31 +81,24 @@ public class DocumentService : IDocumentService
             FilePath = uniqueBlobName,
             FileSize = request.File.Length,
             ContentType = AllowedFileTypes[fileExtension],
-            ProjectId = request.ProjectId,
+            ProjectId = projectId,
             CreatedBy = uploadedBy,
             CreatedAt = DateTime.UtcNow,
             IsActive = true
         };
 
-        // Extract pages + build section tree (best-effort, non-blocking failure)
+        // Extract pages + build section tree (best-effort, non-blocking)
         try
         {
             using var extractionStream = request.File.OpenReadStream();
-
-            var pages = await _textExtractionService.ExtractPagesAsync(
-                extractionStream,
-                request.File.FileName);
-
+            var pages = await _textExtractionService.ExtractPagesAsync(extractionStream, request.File.FileName);
             if (pages.Count > 0)
             {
                 document.ExtractedText = string.Join("\n\n", pages.Select(p => p.Text));
                 document.TreeJson = await _aiService.BuildTreeAsync(pages);
             }
         }
-        catch
-        {
-            // AI indexing best-effort — don't block upload
-        }
+        catch { /* AI indexing best-effort — don't block upload */ }
 
         _context.Documents.Add(document);
         await _context.SaveChangesAsync();
@@ -117,33 +106,30 @@ public class DocumentService : IDocumentService
         return MapToResponse(document);
     }
 
-    // Get Project Documents
+    // ── Get project documents ─────────────────────────────────────────────────
+    // BR-007: non-Admin can only see their own project's documents.
+    // requesterRole here is the role in the specific project (from "project:{id}" claim).
     public async Task<List<DocumentResponseDto>> GetProjectDocumentsAsync(
         Guid projectId,
         string requesterId,
         string requesterRole,
-        Guid? requesterProjectId)
+        Guid requesterProjectId)  // requesterProjectId == projectId for non-Admin (validated in controller)
     {
-        if (requesterRole != "Admin")
-        {
-            if (requesterProjectId != projectId)
-                return new List<DocumentResponseDto>();
-        }
-
         var documents = await _context.Documents
             .Where(d => d.ProjectId == projectId && d.IsActive)
             .OrderByDescending(d => d.CreatedAt)
             .ToListAsync();
 
-        return documents.Select(d => MapToResponse(d)).ToList();
+        return documents.Select(MapToResponse).ToList();
     }
 
-    // Download Document
+    // ── Download ──────────────────────────────────────────────────────────────
+    // isAdmin bypasses project check; otherwise caller must be a member of the document's project.
     public async Task<(byte[] FileBytes, string ContentType, string FileName)?> DownloadDocumentAsync(
         Guid documentId,
         string requesterId,
-        string requesterRole,
-        Guid? requesterProjectId)
+        bool isAdmin,
+        IReadOnlyDictionary<Guid, string> projectRoles)
     {
         var document = await _context.Documents
             .FirstOrDefaultAsync(d => d.Id == documentId && d.IsActive);
@@ -151,11 +137,8 @@ public class DocumentService : IDocumentService
         if (document == null)
             return null;
 
-        if (requesterRole != "Admin")
-        {
-            if (requesterProjectId != document.ProjectId)
-                return null;
-        }
+        if (!isAdmin && !projectRoles.ContainsKey(document.ProjectId))
+            return null;
 
         var containerClient = _blobServiceClient.GetBlobContainerClient(ContainerName);
         var blobClient = containerClient.GetBlobClient(document.FilePath);
@@ -164,17 +147,18 @@ public class DocumentService : IDocumentService
             return null;
 
         var response = await blobClient.DownloadContentAsync();
-        var fileBytes = response.Value.Content.ToArray();
-
-        return (fileBytes, document.ContentType, document.FileName);
+        return (response.Value.Content.ToArray(), document.ContentType, document.FileName);
     }
 
-    // Delete Document
+    // ── Delete ────────────────────────────────────────────────────────────────
+    // BR-009: ProjectHead can delete any doc in their project.
+    // BR-010: User can only delete their own uploads.
+    // Admin can delete any doc in any project.
     public async Task<bool> DeleteDocumentAsync(
         Guid documentId,
         string requesterId,
-        string requesterRole,
-        Guid? requesterProjectId)
+        bool isAdmin,
+        IReadOnlyDictionary<Guid, string> projectRoles)
     {
         var document = await _context.Documents
             .FirstOrDefaultAsync(d => d.Id == documentId && d.IsActive);
@@ -182,43 +166,36 @@ public class DocumentService : IDocumentService
         if (document == null)
             return false;
 
-        if (requesterRole == "ProjectHead")
+        if (!isAdmin)
         {
-            if (requesterProjectId != document.ProjectId)
-                return false;
-        }
-        else if (requesterRole == "User")
-        {
-            if (document.CreatedBy != requesterId)
-                return false;
+            if (!projectRoles.TryGetValue(document.ProjectId, out var roleInProject))
+                return false; // not a member of this document's project
+
+            if (roleInProject == "User" && document.CreatedBy != requesterId)
+                return false; // BR-010: User can only delete own uploads
+
+            // ProjectHead can delete any doc in their project — no extra check needed.
         }
 
         var containerClient = _blobServiceClient.GetBlobContainerClient(ContainerName);
         var blobClient = containerClient.GetBlobClient(document.FilePath);
-        try
-        {
-            await blobClient.DeleteIfExistsAsync();
-        }
-        catch
-        {
-            // ignore blob delete failures, proceed to soft-delete metadata
-        }
+        try { await blobClient.DeleteIfExistsAsync(); }
+        catch { /* ignore blob delete failures, proceed to soft-delete */ }
 
         document.IsActive = false;
         document.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync();
-
         return true;
     }
 
-    // Update Document (title/description and optional file replacement)
-    // update document metadata and optionally replace the file in blob storage///...
+    // ── Update ────────────────────────────────────────────────────────────────
+    // Same ownership rules as Delete.
     public async Task<DocumentResponseDto?> UpdateDocumentAsync(
         Guid documentId,
         UpdateDocumentDto request,
         string requesterId,
-        string requesterRole,
-        Guid? requesterProjectId)
+        bool isAdmin,
+        IReadOnlyDictionary<Guid, string> projectRoles)
     {
         var document = await _context.Documents
             .FirstOrDefaultAsync(d => d.Id == documentId && d.IsActive);
@@ -226,20 +203,13 @@ public class DocumentService : IDocumentService
         if (document == null)
             return null;
 
-        // Authorization: Admin (any), ProjectHead (own project), User (own upload only)
-        if (requesterRole == "ProjectHead")
+        if (!isAdmin)
         {
-            if (requesterProjectId != document.ProjectId)
+            if (!projectRoles.TryGetValue(document.ProjectId, out var roleInProject))
                 return null;
-        }
-        else if (requesterRole == "User")
-        {
-            if (document.CreatedBy != requesterId)
+
+            if (roleInProject == "User" && document.CreatedBy != requesterId)
                 return null;
-        }
-        else if (requesterRole != "Admin")
-        {
-            return null;
         }
 
         document.Title = request.Title;
@@ -279,91 +249,23 @@ public class DocumentService : IDocumentService
         return MapToResponse(document);
     }
 
-    // Create a text-based document (.docx) from typed content
-    //public async Task<DocumentResponseDto?> CreateTextDocumentAsync(
-    //    CreateTextDocumentDto request,
-    //    string uploadedBy,
-    //    string uploaderRole,
-    //    Guid? uploaderProjectId)
-    //{
-    //    if (uploaderRole != "Admin")
-    //    {
-    //        if (uploaderProjectId != request.ProjectId)
-    //            return null;
-    //    }
-
-    //    var project = await _context.Projects
-    //        .FirstOrDefaultAsync(p => p.Id == request.ProjectId && p.IsActive);
-
-    //    if (project == null)
-    //        return null;
-
-    //    byte[] fileBytes;
-    //    using (var ms = new MemoryStream())
-    //    {
-    //        using (var wordDoc = WordprocessingDocument.Create(ms, WordprocessingDocumentType.Document))
-    //        {
-    //            var mainPart = wordDoc.AddMainDocumentPart();
-    //            mainPart.Document = new OpenXmlWordDoc(
-    //                new DocumentFormat.OpenXml.Wordprocessing.Body(
-    //                    new DocumentFormat.OpenXml.Wordprocessing.Paragraph(
-    //                        new DocumentFormat.OpenXml.Wordprocessing.Run(
-    //                            new DocumentFormat.OpenXml.Wordprocessing.Text(request.Content ?? string.Empty)
-    //                        )
-    //                    )
-    //                )
-    //            );
-    //            mainPart.Document.Save();
-    //        }
-    //        fileBytes = ms.ToArray();
-    //    }
-
-    //    var containerClient = _blobServiceClient.GetBlobContainerClient(ContainerName);
-    //    await containerClient.CreateIfNotExistsAsync(PublicAccessType.None);
-
-    //    var fileName = $"{request.Title}.docx";
-    //    var uniqueBlobName = $"{request.ProjectId}/{Guid.NewGuid()}_{fileName}";
-    //    var blobClient = containerClient.GetBlobClient(uniqueBlobName);
-
-    //    using (var uploadStream = new MemoryStream(fileBytes))
-    //    {
-    //        await blobClient.UploadAsync(uploadStream, new BlobHttpHeaders
-    //        {
-    //            ContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    //        });
-    //    }
-
-    //    var document = new DomainDocument
-    //    {
-    //        Id = Guid.NewGuid(),
-    //        Title = request.Title,
-    //        Description = request.Description,
-    //        FileName = fileName,
-    //        FilePath = uniqueBlobName,
-    //        FileSize = fileBytes.Length,
-    //        ContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    //        ProjectId = request.ProjectId,
-    //        CreatedBy = uploadedBy,
-    //        CreatedAt = DateTime.UtcNow,
-    //        IsActive = true
-    //    };
-
-    //    _context.Documents.Add(document);
-    //    await _context.SaveChangesAsync();
-
-    //    return MapToResponse(document);
-    //}
-
-    // Search Documents
+    // ── Search (plain SQL keyword search) ─────────────────────────────────────
+    // Admin sees all projects; others see only their member projects.
     public async Task<List<DocumentResponseDto>> SearchDocumentsAsync(
-        string query, string requesterId, string requesterRole, Guid? requesterProjectId)
+        string query,
+        string requesterId,
+        bool isAdmin,
+        IReadOnlyDictionary<Guid, string> projectRoles)
     {
         var q = _context.Documents.Where(d => d.IsActive);
 
-        if (requesterRole != "Admin")
+        if (!isAdmin)
         {
-            if (requesterProjectId == null) return new List<DocumentResponseDto>();
-            q = q.Where(d => d.ProjectId == requesterProjectId);
+            if (projectRoles.Count == 0)
+                return new List<DocumentResponseDto>();
+
+            var memberProjectIds = projectRoles.Keys.ToList();
+            q = q.Where(d => memberProjectIds.Contains(d.ProjectId));
         }
 
         if (!string.IsNullOrWhiteSpace(query))
@@ -372,10 +274,10 @@ public class DocumentService : IDocumentService
         }
 
         var results = await q.OrderByDescending(d => d.CreatedAt).ToListAsync();
-        return results.Select(d => MapToResponse(d)).ToList();
+        return results.Select(MapToResponse).ToList();
     }
 
-    // Map to Response
+    // ── Helpers ───────────────────────────────────────────────────────────────
     private static DocumentResponseDto MapToResponse(DomainDocument document)
     {
         return new DocumentResponseDto
@@ -398,10 +300,8 @@ public class DocumentService : IDocumentService
 
     private static string FormatFileSize(long bytes)
     {
-        if (bytes < 1024)
-            return $"{bytes} B";
-        if (bytes < 1024 * 1024)
-            return $"{bytes / 1024.0:F2} KB";
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F2} KB";
         return $"{bytes / (1024.0 * 1024):F2} MB";
     }
 }

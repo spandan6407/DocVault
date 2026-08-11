@@ -93,8 +93,9 @@ const SubmitButton = styled.button`
 
 // ---- component ----
 
-function DocumentEditor({ onCreated }) {
+function DocumentEditor({ onCreated, activeProjectId }) {
     const { user } = useAuth();
+    const projectId = activeProjectId ?? user.projects?.[0]?.projectId;
 
     const [values, setValues] = useState({ title: "", description: "", content: "" });
     const [errors, setErrors] = useState({});
@@ -128,7 +129,7 @@ function DocumentEditor({ onCreated }) {
                     Title: values.title,
                     Description: values.description,
                     Content: values.content,
-                    ProjectId: user.projectId,
+                    ProjectId: projectId,
                 });
                 setValues({ title: "", description: "", content: "" });
                 onCreated?.();
@@ -140,7 +141,7 @@ function DocumentEditor({ onCreated }) {
                 setLoading(false);
             }
         },
-        [values, user, validate, onCreated]
+        [values, validate, onCreated, projectId]
     );
 
     return (

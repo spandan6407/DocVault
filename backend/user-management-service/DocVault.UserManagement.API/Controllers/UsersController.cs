@@ -31,11 +31,9 @@ public class UsersController : ControllerBase
     {
         if (user == null) return false;
 
-        // Check claims first
         if (user.HasClaim(c => (c.Type == System.Security.Claims.ClaimTypes.Role || c.Type == "role") && c.Value == "Admin"))
             return true;
 
-        // Fallback: check roles from user store based on subject (sub) claim
         var sub = user.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier)
                   ?? user.FindFirstValue(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Sub);
         if (string.IsNullOrEmpty(sub))
@@ -55,31 +53,33 @@ public class UsersController : ControllerBase
         }
     }
 
+    // Every "project:{guid}" claim on the token, keyed by project id, valued by that project's role.
+    private static Dictionary<Guid, string> GetProjectRoleClaims(ClaimsPrincipal user)
+    {
+        var map = new Dictionary<Guid, string>();
+        foreach (var claim in user.Claims)
+        {
+            if (claim.Type.StartsWith("project:") &&
+                Guid.TryParse(claim.Type.Substring("project:".Length), out var projectId))
+            {
+                map[projectId] = claim.Value;
+            }
+        }
+        return map;
+    }
+
     [HttpPost("users")]
     [Authorize]
-    public async Task<IActionResult> CreateUser(
-        [FromBody] CreateUserDto request)
+    public async Task<IActionResult> CreateUser([FromBody] CreateUserDto request)
     {
-        // Diagnostic logging: log authentication and claims
-        try
-        {
-            var isAuth = User?.Identity?.IsAuthenticated ?? false;
-            var sub = User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? User?.FindFirstValue(JwtRegisteredClaimNames.Sub) ?? "";
-            var roles = User?.Claims.Where(c => c.Type == ClaimTypes.Role || c.Type == "role").Select(c => c.Value).ToArray() ?? Array.Empty<string>();
-            var claims = User?.Claims.Select(c => new { c.Type, c.Value }).ToList();
-            _logger?.LogInformation("CreateUser invoked. UserId={sub} IsAuthenticated={isAuth} Roles={roles} Claims={claims}", sub, isAuth, string.Join(',', roles), claims);
-        }
-        catch { }
-
         if (!await IsAdminAsync(User))
         {
-            _logger?.LogWarning("CreateUser forbidden: caller is not admin. Claims: {claims}", User?.Claims.Select(c => new { c.Type, c.Value }));
+            _logger?.LogWarning("CreateUser forbidden: caller is not admin.");
             return Forbid();
         }
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        // Allow admin to bypass project existence check to create user immediately after project creation
         var result = await _userService.CreateUserAsync(request, bypassProjectCheck: true);
         if (result == null)
             return BadRequest(new { message = "User creation failed." });
@@ -95,11 +95,15 @@ public class UsersController : ControllerBase
                          ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
                          ?? string.Empty;
         var requesterRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
-        var projectIdClaim = User.FindFirstValue("projectId");
-        Guid? requesterProjectId = !string.IsNullOrEmpty(projectIdClaim)
-            ? Guid.Parse(projectIdClaim) : null;
 
-        var result = await _userService.DeleteUserAsync(id, requesterId, requesterRole, requesterProjectId);
+        // A ProjectHead may now be head of several projects — collect all of them
+        // so the service can check "is the target a member of any project I head".
+        var headProjectIds = GetProjectRoleClaims(User)
+            .Where(kv => kv.Value == "ProjectHead")
+            .Select(kv => kv.Key)
+            .ToList();
+
+        var result = await _userService.DeleteUserAsync(id, requesterId, requesterRole, headProjectIds);
         if (!result)
             return BadRequest(new { message = "Delete failed. Check permissions." });
 
@@ -116,7 +120,6 @@ public class UsersController : ControllerBase
         return Ok(result);
     }
 
-    // GET /api/user-projects - Admin only diagnostic endpoint to list projects known to User Service
     [HttpGet("user-projects")]
     [Authorize]
     public async Task<IActionResult> GetUserProjects()
@@ -131,26 +134,20 @@ public class UsersController : ControllerBase
     [Authorize(Roles = "Admin,ProjectHead")]
     public async Task<IActionResult> GetUsersByProject(Guid projectId)
     {
-        var requesterId = User.FindFirstValue(ClaimTypes.NameIdentifier)
-                         ?? string.Empty;
-        var requesterRole = User.FindFirstValue(ClaimTypes.Role)
-                         ?? string.Empty;
+        var requesterId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var requesterRole = User.FindFirstValue(ClaimTypes.Role) ?? string.Empty;
 
-        var result = await _userService.GetUsersByProjectAsync(
-            projectId, requesterId, requesterRole);
-
+        var result = await _userService.GetUsersByProjectAsync(projectId, requesterId, requesterRole);
         return Ok(result);
     }
 
     [HttpPut("users/{id}/assign-project-head")]
     [Authorize]
-    public async Task<IActionResult> AssignProjectHead(
-        string id, [FromBody] AssignProjectHeadDto request)
+    public async Task<IActionResult> AssignProjectHead(string id, [FromBody] AssignProjectHeadDto request)
     {
         if (!await IsAdminAsync(User))
             return Forbid();
-        var result = await _userService
-            .AssignProjectHeadAsync(id, request);
+        var result = await _userService.AssignProjectHeadAsync(id, request);
 
         if (result == null)
             return BadRequest(new { message = "Assignment failed." });
@@ -172,8 +169,6 @@ public class UsersController : ControllerBase
         if (string.IsNullOrEmpty(userId))
             return Unauthorized();
 
-        // Ensure caller has appropriate role (User or ProjectHead). Some tokens may not surface role claims
-        // to the Authorize attribute, so verify via user store as a fallback.
         var appUser = await _userManager.FindByIdAsync(userId);
         if (appUser == null)
             return Unauthorized();

@@ -153,3 +153,8 @@ function DocumentCard({ document, canEdit, canDelete, onChanged, onView }) {
 }
 
 export default memo(DocumentCard);
+
+
+
+
+

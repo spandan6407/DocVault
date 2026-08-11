@@ -8,7 +8,7 @@ var rabbitmq = builder.AddRabbitMQ("rabbitmq",
     .WithManagementPlugin()
     .WithLifetime(ContainerLifetime.Persistent);
 
-// SQL Server... 
+// SQL Server 
 
 var sqlPassword = builder.AddParameter("sql-password", "MyStrongPassword123!");
 
@@ -54,4 +54,4 @@ builder
     .WaitFor(userService);
 
 builder.Build().Run();
-//
+

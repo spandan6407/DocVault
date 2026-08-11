@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "../../components/layout/DashboardLayout";
 import { userApi } from "../../api/api";
@@ -6,18 +6,109 @@ import {
     Badge,
     Button,
     EmptyState,
-    Grid,
-    List,
-    ListRow,
+    IconButton,
+    Menu,
+    MenuItem,
+    MenuWrap,
+    Pagination,
     PageHeader,
     PageTitle,
+    SearchInput,
     Section,
+    Select,
+    Table,
+    Td,
+    Th,
+    Toolbar,
+    Tr,
 } from "../../styles/shared";
+
+const PAGE_SIZE = 10;
+const ROLES = ["All Roles", "ProjectHead", "User"];
+
+function ProjectBadges({ projects }) {
+    if (!projects || projects.length === 0)
+        return <span style={{ color: "#6B778C" }}>—</span>;
+    return (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {projects.map((p) => (
+                <Badge key={p.projectId} $tone={p.role === "ProjectHead" ? "success" : undefined}>
+                    {p.projectName || p.projectId.slice(0, 8)} · {p.role}
+                </Badge>
+            ))}
+        </div>
+    );
+}
+
+function ActionMenu({ user, onAssignHead, onDelete }) {
+    const [view, setView] = useState("closed");
+    const wrapRef = useRef(null);
+
+    useEffect(() => {
+        if (view === "closed") return;
+        function handleOutside(e) {
+            if (wrapRef.current && !wrapRef.current.contains(e.target)) setView("closed");
+        }
+        document.addEventListener("mousedown", handleOutside);
+        return () => document.removeEventListener("mousedown", handleOutside);
+    }, [view]);
+
+    const eligibleProjects = (user.projects || []).filter((p) => p.role === "User");
+
+    if (user.isAdmin) return null;
+
+    return (
+        <MenuWrap ref={wrapRef}>
+            <IconButton
+                type="button"
+                onClick={() => setView((v) => (v === "closed" ? "root" : "closed"))}
+                aria-label="Actions"
+            >
+                ?
+            </IconButton>
+
+            {view === "root" && (
+                <Menu>
+                    {eligibleProjects.length > 0 && (
+                        <MenuItem type="button" onClick={() => setView("pickProject")}>
+                            Make Head ?
+                        </MenuItem>
+                    )}
+                    <MenuItem
+                        type="button"
+                        $danger
+                        onClick={() => { setView("closed"); onDelete(user.id); }}
+                    >
+                        Delete
+                    </MenuItem>
+                </Menu>
+            )}
+
+            {view === "pickProject" && (
+                <Menu style={{ minWidth: 200 }}>
+                    {eligibleProjects.map((p) => (
+                        <MenuItem
+                            key={p.projectId}
+                            type="button"
+                            onClick={() => { setView("closed"); onAssignHead(user.id, p.projectId); }}
+                        >
+                            {p.projectName || p.projectId.slice(0, 8)}
+                        </MenuItem>
+                    ))}
+                </Menu>
+            )}
+        </MenuWrap>
+    );
+}
 
 export default function UsersPage() {
     const navigate = useNavigate();
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState("");
+    const [projectFilter, setProjectFilter] = useState("all");
+    const [roleFilter, setRoleFilter] = useState("All Roles");
+    const [page, setPage] = useState(0);
 
     const loadUsers = useCallback(async () => {
         setLoading(true);
@@ -29,35 +120,70 @@ export default function UsersPage() {
         }
     }, []);
 
-    useEffect(() => {
-        queueMicrotask(loadUsers);
+    useEffect(() => { queueMicrotask(loadUsers); }, [loadUsers]);
+
+    // Build unique project list from all users' memberships for the project dropdown
+    const allProjects = useMemo(() => {
+        const map = new Map();
+        users.forEach((u) =>
+            (u.projects || []).forEach((p) => {
+                if (!map.has(p.projectId)) map.set(p.projectId, p.projectName || p.projectId.slice(0, 8));
+            })
+        );
+        return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+    }, [users]);
+
+    const filteredUsers = useMemo(() => {
+        const term = search.trim().toLowerCase();
+        return users.filter((u) => {
+            // Search filter
+            if (term) {
+                const name = `${u.firstName} ${u.lastName}`.toLowerCase();
+                if (!name.includes(term) && !u.email.toLowerCase().includes(term)) return false;
+            }
+
+            // Project filter — user must have a membership in the selected project
+            if (projectFilter !== "all") {
+                const inProject = (u.projects || []).some((p) => p.projectId === projectFilter);
+                if (!inProject) return false;
+            }
+
+            // Role filter — check within the selected project if one is chosen,
+            // otherwise check across all memberships
+            if (roleFilter !== "All Roles") {
+                if (u.isAdmin && roleFilter === "Admin") return true;
+                const memberships = projectFilter !== "all"
+                    ? (u.projects || []).filter((p) => p.projectId === projectFilter)
+                    : (u.projects || []);
+                if (!memberships.some((p) => p.role === roleFilter)) return false;
+            }
+
+            return true;
+        });
+    }, [users, search, projectFilter, roleFilter]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
+    const pagedUsers = useMemo(
+        () => filteredUsers.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE),
+        [filteredUsers, page]
+    );
+
+    const resetPage = useCallback(() => setPage(0), []);
+
+    const handleSearchChange = useCallback((e) => { setSearch(e.target.value); resetPage(); }, [resetPage]);
+    const handleProjectChange = useCallback((e) => { setProjectFilter(e.target.value); resetPage(); }, [resetPage]);
+    const handleRoleChange = useCallback((e) => { setRoleFilter(e.target.value); resetPage(); }, [resetPage]);
+
+    const handleDeleteUser = useCallback(async (id) => {
+        if (!window.confirm("Delete this user?")) return;
+        await userApi.delete(`/users/${id}`);
+        loadUsers();
     }, [loadUsers]);
 
-    const usersByRole = useMemo(
-        () => ({
-            Admin: users.filter((u) => u.role === "Admin"),
-            ProjectHead: users.filter((u) => u.role === "ProjectHead"),
-            User: users.filter((u) => u.role === "User"),
-        }),
-        [users]
-    );
-
-    const handleDeleteUser = useCallback(
-        async (id) => {
-            if (!window.confirm("Delete this user?")) return;
-            await userApi.delete(`/users/${id}`);
-            loadUsers();
-        },
-        [loadUsers]
-    );
-
-    const handleAssignHead = useCallback(
-        async (userId) => {
-            await userApi.put(`/users/${userId}/assign-project-head`);
-            loadUsers();
-        },
-        [loadUsers]
-    );
+    const handleAssignHead = useCallback(async (userId, projectId) => {
+        await userApi.put(`/users/${userId}/assign-project-head`, { ProjectId: projectId });
+        loadUsers();
+    }, [loadUsers]);
 
     return (
         <DashboardLayout>
@@ -67,39 +193,84 @@ export default function UsersPage() {
             </PageHeader>
 
             <Section>
+                <Toolbar>
+                    <SearchInput
+                        placeholder="Search by name or email"
+                        value={search}
+                        onChange={handleSearchChange}
+                    />
+                    <Select value={projectFilter} onChange={handleProjectChange}>
+                        <option value="all">All Projects</option>
+                        {allProjects.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                    </Select>
+                    <Select value={roleFilter} onChange={handleRoleChange}>
+                        {ROLES.map((r) => (
+                            <option key={r} value={r}>{r}</option>
+                        ))}
+                    </Select>
+                </Toolbar>
+
                 {loading ? (
                     <EmptyState>Loading...</EmptyState>
+                ) : filteredUsers.length === 0 ? (
+                    <EmptyState>No users match the selected filters.</EmptyState>
                 ) : (
-                    <Grid $cols="1fr 1fr 1fr">
-                        {["Admin", "ProjectHead", "User"].map((role) => (
-                            <div key={role}>
-                                <Badge>{role}</Badge>
-                                <List style={{ marginTop: 8 }}>
-                                    {usersByRole[role].map((u) => (
-                                        <ListRow key={u.id}>
-                                            <div>
-                                                <div>
-                                                    {u.firstName} {u.lastName}
-                                                </div>
-                                                <div style={{ color: "#6B778C", fontSize: 12 }}>{u.email}</div>
-                                            </div>
-                                            {role === "User" && (
-                                                <Button $variant="secondary" onClick={() => handleAssignHead(u.id)}>
-                                                    Make Head
-                                                </Button>
-                                            )}
-                                            {role !== "Admin" && (
-                                                <Button $variant="danger" onClick={() => handleDeleteUser(u.id)}>
-                                                    Delete
-                                                </Button>
-                                            )}
-                                        </ListRow>
-                                    ))}
-                                    {usersByRole[role].length === 0 && <EmptyState>None</EmptyState>}
-                                </List>
-                            </div>
-                        ))}
-                    </Grid>
+                    <>
+                        <Table>
+                            <thead>
+                                <tr>
+                                    <Th>Name</Th>
+                                    <Th>Email</Th>
+                                    <Th>Projects · Role</Th>
+                                    <Th style={{ width: 48 }} />
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {pagedUsers.map((u) => (
+                                    <Tr key={u.id}>
+                                        <Td>{u.firstName} {u.lastName}</Td>
+                                        <Td>{u.email}</Td>
+                                        <Td>
+                                            {u.isAdmin
+                                                ? <Badge>Admin</Badge>
+                                                : <ProjectBadges projects={u.projects} />}
+                                        </Td>
+                                        <Td>
+                                            <ActionMenu
+                                                user={u}
+                                                onAssignHead={handleAssignHead}
+                                                onDelete={handleDeleteUser}
+                                            />
+                                        </Td>
+                                    </Tr>
+                                ))}
+                            </tbody>
+                        </Table>
+
+                        <Pagination>
+                            <span>
+                                Page {page + 1} of {totalPages} · {filteredUsers.length} users
+                            </span>
+                            <Button
+                                type="button"
+                                $variant="secondary"
+                                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                                disabled={page === 0}
+                            >
+                                Previous
+                            </Button>
+                            <Button
+                                type="button"
+                                $variant="secondary"
+                                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                                disabled={page >= totalPages - 1}
+                            >
+                                Next
+                            </Button>
+                        </Pagination>
+                    </>
                 )}
             </Section>
         </DashboardLayout>

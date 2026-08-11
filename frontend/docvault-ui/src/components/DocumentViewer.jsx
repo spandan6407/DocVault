@@ -104,3 +104,6 @@ function DocumentViewer({ document, onClose }) {
 }
 
 export default memo(DocumentViewer);
+
+
+          

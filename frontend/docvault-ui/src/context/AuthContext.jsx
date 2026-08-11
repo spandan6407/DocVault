@@ -14,20 +14,30 @@ export function AuthProvider({ children }) {
         const data = res.data;
 
         const decoded = jwtDecode(data.token);
-        const userId = decoded.sub;
+
+        // Derive a single "role" for routing from isAdmin flag + projects list.
+        // Admin has no project memberships; ProjectHead/User is determined by
+        // whether any membership has role "ProjectHead".
+        let role = "User";
+        if (data.isAdmin) {
+            role = "Admin";
+        } else if ((data.projects || []).some((p) => p.role === "ProjectHead")) {
+            role = "ProjectHead";
+        }
 
         const userData = {
-            id: userId,
+            id: decoded.sub,
             email: data.email,
             fullName: data.fullName,
-            role: data.role,
-            projectId: data.projectId,
+            isAdmin: data.isAdmin,
+            role,                        // derived — used for routing + ProtectedRoute
+            projects: data.projects || [], // [{projectId, projectName, role}]
         };
 
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(userData));
         setUser(userData);
-        return data;
+        return userData; // Login.jsx reads .role from this for ROLE_HOME redirect
     }
 
     function logout() {

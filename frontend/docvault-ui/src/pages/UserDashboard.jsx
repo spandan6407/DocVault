@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import DashboardLayout from "../components/layout/DashboardLayout";
 import DocumentCard from "../components/DocumentCard";
 import DocumentEditor from "../components/DocumentEditor";
@@ -6,24 +6,28 @@ import DocumentViewer from "../components/DocumentViewer";
 import { useAuth } from "../context/useAuth";
 import { docApi, userApi } from "../api/api";
 import {
-    Badge,
     Button,
     EmptyState,
     Field,
     Input,
     Label,
     List,
-    ListRow,
     PageHeader,
     PageTitle,
     Section,
     SectionTitle,
 } from "../styles/shared";
 
-export default function ProjectHeadDashboard() {
+export default function UserDashboard() {
     const { user } = useAuth();
+
+    // User can belong to multiple projects — use first membership's projectId.
+    const projectId = useMemo(
+        () => user.projects?.[0]?.projectId ?? null,
+        [user.projects]
+    );
+
     const [documents, setDocuments] = useState([]);
-    const [members, setMembers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [viewingDoc, setViewingDoc] = useState(null);
 
@@ -34,23 +38,20 @@ export default function ProjectHeadDashboard() {
     const [requestedProjectId, setRequestedProjectId] = useState("");
     const [requestSent, setRequestSent] = useState(false);
 
-    const loadAll = useCallback(async () => {
+    const loadDocuments = useCallback(async () => {
+        if (!projectId) return;
         setLoading(true);
         try {
-            const [docsRes, membersRes] = await Promise.all([
-                docApi.get(`/projects/${user.projectId}/documents`),
-                userApi.get(`/projects/${user.projectId}/users`),
-            ]);
-            setDocuments(docsRes.data);
-            setMembers(membersRes.data);
+            const res = await docApi.get(`/projects/${projectId}/documents`);
+            setDocuments(res.data);
         } finally {
             setLoading(false);
         }
-    }, [user.projectId]);
+    }, [projectId]);
 
     useEffect(() => {
-        queueMicrotask(loadAll);
-    }, [loadAll]);
+        queueMicrotask(loadDocuments);
+    }, [loadDocuments]);
 
     const handleUpload = useCallback(
         async (e) => {
@@ -61,27 +62,18 @@ export default function ProjectHeadDashboard() {
                 const form = new FormData();
                 form.append("File", file);
                 form.append("Title", uploadTitle || file.name);
-                form.append("ProjectId", user.projectId);
+                form.append("ProjectId", projectId);
                 await docApi.post("/documents", form, {
                     headers: { "Content-Type": "multipart/form-data" },
                 });
                 setFile(null);
                 setUploadTitle("");
-                loadAll();
+                loadDocuments();
             } finally {
                 setUploading(false);
             }
         },
-        [file, uploadTitle, user.projectId, loadAll]
-    );
-
-    const handleRemoveMember = useCallback(
-        async (memberId) => {
-            if (!window.confirm("Remove this member from the project?")) return;
-            await userApi.delete(`/users/${memberId}`);
-            loadAll();
-        },
-        [loadAll]
+        [file, uploadTitle, projectId, loadDocuments]
     );
 
     const handleRequestChange = useCallback(
@@ -95,26 +87,32 @@ export default function ProjectHeadDashboard() {
         [requestedProjectId]
     );
 
+    const ownDocumentIds = useMemo(
+        () => new Set(documents.filter((d) => d.createdBy === user.id).map((d) => d.id)),
+        [documents, user.id]
+    );
+
     return (
         <DashboardLayout>
             <PageHeader>
-                <PageTitle>Project Head Dashboard</PageTitle>
+                <PageTitle>My Project</PageTitle>
             </PageHeader>
 
             <Section>
                 <SectionTitle>Upload a document</SectionTitle>
                 <form onSubmit={handleUpload}>
                     <Field>
-                        <Label htmlFor="ph-upload-title">Title</Label>
+                        <Label htmlFor="upload-title">Title</Label>
                         <Input
-                            id="ph-upload-title"
+                            id="upload-title"
                             value={uploadTitle}
                             onChange={(e) => setUploadTitle(e.target.value)}
+                            placeholder="Document title"
                         />
                     </Field>
                     <Field>
-                        <Label htmlFor="ph-upload-file">File</Label>
-                        <input id="ph-upload-file" type="file" onChange={(e) => setFile(e.target.files[0])} required />
+                        <Label htmlFor="upload-file">File</Label>
+                        <input id="upload-file" type="file" onChange={(e) => setFile(e.target.files[0])} required />
                     </Field>
                     <Button type="submit" disabled={uploading || !file}>
                         {uploading ? "Uploading..." : "Upload"}
@@ -124,52 +122,27 @@ export default function ProjectHeadDashboard() {
 
             <Section>
                 <SectionTitle>Write a document</SectionTitle>
-                <DocumentEditor onCreated={loadAll} />
+                <DocumentEditor onCreated={loadDocuments} />
             </Section>
 
             <Section id="documents">
-                <SectionTitle>Project documents</SectionTitle>
+                <SectionTitle>Documents</SectionTitle>
                 {loading ? (
                     <EmptyState>Loading...</EmptyState>
                 ) : documents.length === 0 ? (
-                    <EmptyState>No documents yet.</EmptyState>
+                    <EmptyState>No documents in this project yet.</EmptyState>
                 ) : (
                     <List>
                         {documents.map((doc) => (
                             <li key={doc.id}>
-                                {/* ProjectHead can manage any document in their own project */}
                                 <DocumentCard
                                     document={doc}
-                                    canEdit
-                                    canDelete
-                                    onChanged={loadAll}
+                                    canEdit={ownDocumentIds.has(doc.id)}
+                                    canDelete={ownDocumentIds.has(doc.id)}
+                                    onChanged={loadDocuments}
                                     onView={setViewingDoc}
                                 />
                             </li>
-                        ))}
-                    </List>
-                )}
-            </Section>
-
-            <Section id="members">
-                <SectionTitle>Members</SectionTitle>
-                {members.length === 0 ? (
-                    <EmptyState>No members yet.</EmptyState>
-                ) : (
-                    <List>
-                        {members.map((m) => (
-                            <ListRow key={m.id}>
-                                <div>
-                                    <strong>{m.firstName} {m.lastName}</strong>{" "}
-                                    <Badge>{m.role}</Badge>
-                                    <div style={{ color: "#6B778C", fontSize: 12 }}>{m.email}</div>
-                                </div>
-                                {m.id !== user.id && (
-                                    <Button $variant="danger" onClick={() => handleRemoveMember(m.id)}>
-                                        Remove
-                                    </Button>
-                                )}
-                            </ListRow>
                         ))}
                     </List>
                 )}
@@ -182,9 +155,9 @@ export default function ProjectHeadDashboard() {
                 ) : (
                     <form onSubmit={handleRequestChange}>
                         <Field>
-                            <Label htmlFor="ph-req-project">Requested project ID</Label>
+                            <Label htmlFor="req-project">Requested project ID</Label>
                             <Input
-                                id="ph-req-project"
+                                id="req-project"
                                 value={requestedProjectId}
                                 onChange={(e) => setRequestedProjectId(e.target.value)}
                                 required
