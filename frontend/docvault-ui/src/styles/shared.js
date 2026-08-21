@@ -1,5 +1,7 @@
 import styled from "styled-components";
 
+// we have to take the use of this thing inside the 
+
 export const PageHeader = styled.div`
   display: flex;
   align-items: center;

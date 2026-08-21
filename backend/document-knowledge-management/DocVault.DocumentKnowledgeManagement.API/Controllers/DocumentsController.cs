@@ -3,6 +3,8 @@ using DocVault.DocumentKnowledgeManagement.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using DocVault.DocumentKnowledgeManagement.Application.DTOs.Documents;
+using DocVault.DocumentKnowledgeManagement.Application.Interfaces;
 
 namespace DocVault.DocumentKnowledgeManagement.API.Controllers;
 
@@ -59,6 +61,34 @@ public class DocumentsController : ControllerBase
             return BadRequest(new { message = "Upload failed. Only PDF and Word documents are allowed." });
         }
 
+        return Ok(result);
+    }
+
+    // OPTIONS /api/documents/compose
+    // Explicitly handle preflight in case CORS middleware is not intercepting OPTIONS early enough.
+    [HttpOptions("documents/compose")]
+    public IActionResult ComposeOptions()
+    {
+        return Ok();
+    }
+
+    // POST /api/documents/compose
+    // Create a text document (saved as .txt in blob storage)
+    [HttpPost("documents/compose")]
+    [Authorize(Roles = "ProjectHead,User")]
+    public async Task<IActionResult> ComposeDocument([FromBody] CreateTextDocumentDto request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var createdBy = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+        var uploaderRole = User.FindFirstValue($"project:{request.ProjectId}") ?? string.Empty;
+        if (string.IsNullOrEmpty(uploaderRole))
+            return Forbid();
+
+        var result = await _documentService.CreateTextDocumentAsync(request, createdBy, uploaderRole, request.ProjectId);
+        if (result == null)
+            return BadRequest(new { message = "Create failed or access denied." });
         return Ok(result);
     }
 

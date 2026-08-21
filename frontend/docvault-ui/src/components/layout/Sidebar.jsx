@@ -48,14 +48,26 @@ const LINKS_BY_ROLE = {
         { to: "/admin/users", label: "Users" },
         { to: "/admin/requests", label: "Change Requests" },
     ],
+    // remove this one as we dont have the seperate role for the 
+
+
     ProjectHead: [
-        { to: "/project-head", label: "Dashboard", end: true },
-        { to: "/project-head#documents", label: "Documents" },
-        { to: "/project-head#members", label: "Members" },
+        { to: "/projects", label: "Dashboard", end: true },
+        { to: "/projects", label: "Projects" },
+        { to: "/projects/change", label: "Change Project" },
+        { to: "/projects/:projectId/documents", label: "Documents" },
+        { to: "/projects/:projectId/members", label: "Members" },
+        { to: "/projects/:projectId/upload", label: "Upload Document" },
+        { to: "/projects/:projectId/write", label: "Write Document" },
     ],
     User: [
-        { to: "/user", label: "Dashboard", end: true },
-        { to: "/user#documents", label: "Documents" },
+        { to: "/projects", label: "Dashboard", end: true },
+        { to: "/projects", label: "Projects" },
+        { to: "/projects/change", label: "Change Project" },
+        { to: "/projects/:projectId/documents", label: "Documents" },
+        { to: "/projects/:projectId/members", label: "Members" },
+        { to: "/projects/:projectId/upload", label: "Upload Document" },
+        { to: "/projects/:projectId/write", label: "Write Document" },
     ],
 };
 
@@ -78,7 +90,7 @@ function Sidebar() {
         <Nav>
             <Brand>DocVault</Brand>
             {links.map((link) => (
-                <NavItem key={link.to} to={link.to} end={link.end} onClick={handleClick(link.to)}>
+                <NavItem key={`${link.to}-${link.label}`} to={link.to} end={link.end} onClick={handleClick(link.to)}>
                     {link.label}
                 </NavItem>
             ))}
@@ -87,3 +99,4 @@ function Sidebar() {
 }
 
 export default memo(Sidebar);
+

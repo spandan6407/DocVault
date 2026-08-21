@@ -24,4 +24,6 @@ public interface IDocumentService
 
     Task<DocumentResponseDto?> UpdateDocumentAsync(
         Guid documentId, UpdateDocumentDto request, string requesterId, bool isAdmin, IReadOnlyDictionary<Guid, string> projectRoles);
+
+    Task<DocumentResponseDto?> CreateTextDocumentAsync(CreateTextDocumentDto request, string createdBy, string creatorRole, Guid projectId);
 }

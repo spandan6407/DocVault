@@ -2,6 +2,12 @@ import { useState } from "react";
 import { jwtDecode } from "jwt-decode";
 import { userApi } from "../api/api";
 import { AuthContext } from "./context";
+// import of the authcontext variable
+
+
+
+// authprovider is the function that is used to provide the data to the component
+// it provide the data to the child 
 
 export function AuthProvider({ children }) {
     const [user, setUser] = useState(() => {
@@ -15,29 +21,28 @@ export function AuthProvider({ children }) {
 
         const decoded = jwtDecode(data.token);
 
-        // Derive a single "role" for routing from isAdmin flag + projects list.
-        // Admin has no project memberships; ProjectHead/User is determined by
-        // whether any membership has role "ProjectHead".
+
         let role = "User";
         if (data.isAdmin) {
             role = "Admin";
         } else if ((data.projects || []).some((p) => p.role === "ProjectHead")) {
             role = "ProjectHead";
         }
+        // else the role will stay as the user ...
 
         const userData = {
             id: decoded.sub,
             email: data.email,
             fullName: data.fullName,
             isAdmin: data.isAdmin,
-            role,                        // derived — used for routing + ProtectedRoute
+            role,                        
             projects: data.projects || [], // [{projectId, projectName, role}]
         };
 
         localStorage.setItem("token", data.token);
         localStorage.setItem("user", JSON.stringify(userData));
         setUser(userData);
-        return userData; // Login.jsx reads .role from this for ROLE_HOME redirect
+        return userData; 
     }
 
     function logout() {

@@ -26,6 +26,7 @@ export default function DashboardLayout({ children }) {
             <Sidebar />
             <Main>
                 <TopBar />
+                {/*this is whatever we are using inside the dashboard... like we take the use of the dashboard inside the admin page...the sidebar and the top bar will be there and rest what we add inside the dashboard layout that will ve different for each of the page  */}
                 <Content>{children}</Content>
             </Main>
         </Shell>

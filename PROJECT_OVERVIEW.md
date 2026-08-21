@@ -94,7 +94,7 @@ Run: `docker compose up -d` and then configure backend apps to point to these en
 
 ---
 
-## Message broker (RabbitMQ)
+## Message broker (RabbitMQ)...
 
 - Purpose: used for application events (user created, role assigned, etc.).
 - Typical exchange/queues: configured by MassTransit in the services.
@@ -192,7 +192,7 @@ Detailed usage of RabbitMQ in this solution
 
 ---
 
-## How to run locally (recommended steps)
+## How to run locally (recommended steps).....
 
 1. Start infra (Docker) if you want local RabbitMQ / SQL Server / Azurite:
    - `docker compose up -d` using the snippet above or your own compose file.
@@ -208,7 +208,7 @@ Detailed usage of RabbitMQ in this solution
 
 ---
 
-## Next steps / TODOs
+## Next steps / TODOs...
 
 - Standardize authentication tokens so role claims are included consistently.
 - Replace inline styles in React components with the new CSS classes for consistent UI.

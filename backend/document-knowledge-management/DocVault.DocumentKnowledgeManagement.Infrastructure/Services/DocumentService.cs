@@ -36,6 +36,78 @@ public class DocumentService : IDocumentService
         _aiService = aiService;
     }
 
+    // Create a text document (written content saved as a .txt file in blob storage)
+    public async Task<DocumentResponseDto?> CreateTextDocumentAsync(
+        CreateTextDocumentDto request,
+        string createdBy,
+        string creatorRole,
+        Guid projectId)
+    {
+        // only ProjectHead or User allowed to create text documents in a project
+        if (creatorRole != "ProjectHead" && creatorRole != "User")
+            return null;
+
+        var project = await _context.Projects
+            .FirstOrDefaultAsync(p => p.Id == projectId && p.IsActive);
+        if (project == null)
+            return null;
+
+        var containerClient = _blobServiceClient.GetBlobContainerClient(ContainerName);
+        await containerClient.CreateIfNotExistsAsync(PublicAccessType.None);
+
+        var fileNameSafe = (string.IsNullOrWhiteSpace(request.Title) ? "document" : request.Title).Replace(" ", "_") + ".txt";
+        var uniqueBlobName = $"{projectId}/{Guid.NewGuid()}_{fileNameSafe}";
+        var blobClient = containerClient.GetBlobClient(uniqueBlobName);
+
+        var contentBytes = System.Text.Encoding.UTF8.GetBytes(request.Content ?? string.Empty);
+        using (var stream = new System.IO.MemoryStream(contentBytes))
+        {
+            await blobClient.UploadAsync(stream, new BlobHttpHeaders { ContentType = "text/plain" });
+        }
+
+        var document = new DomainDocument
+        {
+            Id = Guid.NewGuid(),
+            Title = request.Title,
+            Description = request.Description,
+            FileName = fileNameSafe,
+            FilePath = uniqueBlobName,
+            FileSize = contentBytes.Length,
+            ContentType = "text/plain",
+            ProjectId = projectId,
+            CreatedBy = createdBy,
+            CreatedAt = DateTime.UtcNow,
+            IsActive = true,
+            ExtractedText = request.Content
+        };
+
+        // Optionally build tree from the single text content
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(request.Content))
+            {
+                document.TreeJson = await _ai_service_build_tree_async_placeholder(request.Content);
+            }
+        }
+        catch { /* best-effort */ }
+
+        _context.Documents.Add(document);
+        await _context.SaveChangesAsync();
+
+        return MapToResponse(document);
+    }
+
+    // Helper wrapper to call _aiService.BuildTreeAsync compatible with original code expectations
+    private async Task<string?> _ai_service_build_tree_async_placeholder(string content)
+    {
+        // The existing AI service expects pages; for simple text create a single page representation
+        var pages = new System.Collections.Generic.List<DocVault.DocumentKnowledgeManagement.Application.Interfaces.PageText>
+        {
+            new DocVault.DocumentKnowledgeManagement.Application.Interfaces.PageText { PageNumber = 1, Text = content }
+        };
+        return await _aiService.BuildTreeAsync(pages);
+    }
+
     // ── Upload ────────────────────────────────────────────────────────────────
     // BR-006: Admin explicitly cannot upload (enforced at controller via [Authorize(Roles="ProjectHead,User")]).
     // uploaderRole is the caller's role *in the specific project* from the "project:{id}" claim.

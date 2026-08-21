@@ -120,6 +120,16 @@ public class UsersController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("users/search")]
+    [Authorize]
+    public async Task<IActionResult> SearchUsers([FromQuery] string? query, [FromQuery] Guid? projectId, [FromQuery] string? role)
+    {
+        if (!await IsAdminAsync(User))
+            return Forbid();
+        var result = await _userService.SearchUsersAsync(query, projectId, role);
+        return Ok(result);
+    }
+
     [HttpGet("user-projects")]
     [Authorize]
     public async Task<IActionResult> GetUserProjects()
@@ -131,7 +141,7 @@ public class UsersController : ControllerBase
     }
 
     [HttpGet("projects/{projectId}/users")]
-    [Authorize(Roles = "Admin,ProjectHead")]
+    [Authorize(Roles = "Admin,ProjectHead,User")]
     public async Task<IActionResult> GetUsersByProject(Guid projectId)
     {
         var requesterId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;

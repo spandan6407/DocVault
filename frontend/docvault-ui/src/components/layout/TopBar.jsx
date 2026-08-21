@@ -2,7 +2,7 @@ import { memo, useCallback } from "react";
 import styled from "styled-components";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/useAuth";
-import { Badge, Button } from "../../styles/shared";
+import {  Button } from "../../styles/shared";
 
 const Bar = styled.header`
   height: 52px;
@@ -40,7 +40,6 @@ function TopBar() {
             <div />
             <UserBlock>
                 <Email>{user?.email}</Email>
-                <Badge>{user?.role}</Badge>
                 <Button $variant="secondary" onClick={handleLogout}>
                     Log out
                 </Button>
@@ -50,3 +49,4 @@ function TopBar() {
 }
 
 export default memo(TopBar);
+// use of the memo .....

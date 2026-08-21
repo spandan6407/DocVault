@@ -30,6 +30,7 @@ export default function AdminDashboard() {
     const [searching, setSearching] = useState(false);
     const [results, setResults] = useState(null);
 
+    // giving the count for no of project and no of users 
     const loadCounts = useCallback(async () => {
         const [projectsRes, usersRes] = await Promise.all([docApi.get("/projects"), userApi.get("/users")]);
         setProjectCount(projectsRes.data.length);
@@ -40,6 +41,8 @@ export default function AdminDashboard() {
         queueMicrotask(loadCounts);
     }, [loadCounts]);
 
+
+    // this is not working properly, need to check the api and the backend for this
     const handleSearch = useCallback(
         async (e) => {
             e.preventDefault();

@@ -1,8 +1,16 @@
 import { useCallback, useState } from "react";
 import styled from "styled-components";
 import { useNavigate } from "react-router-dom";
+import { useForm } from "react-hook-form";
 import { useAuth } from "../context/useAuth";
-import { Button, Card, ErrorText, Field, Input, Label } from "../styles/shared";
+import {
+    Button,
+    Card,
+    ErrorText,
+    Field,
+    Input,
+    Label,
+} from "../styles/shared";
 
 const Wrap = styled.div`
   height: 100vh;
@@ -23,64 +31,143 @@ const Brand = styled.div`
   margin-bottom: 20px;
 `;
 
-const ROLE_HOME = { Admin: "/admin", ProjectHead: "/project-head", User: "/user" };
+const ROLE_HOME = {
+    Admin: "/admin",
+    ProjectHead: "/projects",
+    User: "/projects",
+};
 
 export default function Login() {
     const { login } = useAuth();
     const navigate = useNavigate();
 
-    const [values, setValues] = useState({ email: "", password: "" });
     const [error, setError] = useState(null);
     const [loading, setLoading] = useState(false);
 
-    const handleChange = useCallback((field) => (e) => {
-        setValues((prev) => ({ ...prev, [field]: e.target.value }));
-    }, []);
+    const {
+        register,
+        handleSubmit,
+        formState: { errors },
+    } = useForm({
+        mode: "onChange",
+        defaultValues: {
+            email: "",
+            password: "",
+        },
+    });
 
-    const handleSubmit = useCallback(
-        async (e) => {
-            e.preventDefault();
+    const handleLogin = useCallback(
+        async (values) => {
             setError(null);
             setLoading(true);
+
             try {
                 const user = await login(values.email, values.password);
                 navigate(ROLE_HOME[user.role] || "/login");
             } catch (err) {
-                setError(err?.response?.data?.message || "Invalid email or password.");
+                setError(
+                    err?.response?.data?.message ||
+                    "Invalid email or password."
+                );
             } finally {
                 setLoading(false);
             }
         },
-        [login, navigate, values]
+        [login, navigate]
     );
 
     return (
         <Wrap>
             <LoginCard>
                 <Brand>DocVault</Brand>
-                <form onSubmit={handleSubmit} noValidate>
+
+                <form onSubmit={handleSubmit(handleLogin)} noValidate>
                     <Field>
                         <Label htmlFor="email">Email</Label>
+
                         <Input
                             id="email"
                             type="email"
-                            value={values.email}
-                            onChange={handleChange("email")}
-                            required
+                            $invalid={!!errors.email}
+                            {...register("email", {
+                                required: "Email is required.",
+
+                                validate: {
+                                    noSpaces: (value) =>
+                                        value === value.trim() ||
+                                        "Email cannot contain spaces.",
+
+                                    validEmail: (value) =>
+                                        /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+                                            value
+                                        ) ||
+                                        "Please enter a valid email address.",
+                                },
+                            })}
                         />
+
+                        {errors.email && (
+                            <ErrorText>
+                                {errors.email.message}
+                            </ErrorText>
+                        )}
                     </Field>
+
                     <Field>
                         <Label htmlFor="password">Password</Label>
+
                         <Input
                             id="password"
                             type="password"
-                            value={values.password}
-                            onChange={handleChange("password")}
-                            required
+                            $invalid={!!errors.password}
+                            {...register("password", {
+                                required: "Password is required.",
+
+                                validate: {
+                                    noSpaces: (value) =>
+                                        !/\s/.test(value) ||
+                                        "Password cannot contain spaces.",
+
+                                    minLength: (value) =>
+                                        value.length >= 8 ||
+                                        "Password must be at least 8 characters.",
+
+                                    uppercase: (value) =>
+                                        /[A-Z]/.test(value) ||
+                                        "Password must contain an uppercase letter.",
+
+                                    lowercase: (value) =>
+                                        /[a-z]/.test(value) ||
+                                        "Password must contain a lowercase letter.",
+
+                                    number: (value) =>
+                                        /\d/.test(value) ||
+                                        "Password must contain a number.",
+
+                                    specialCharacter: (value) =>
+                                        /[^A-Za-z0-9]/.test(value) ||
+                                        "Password must contain a special character.",
+                                },
+                            })}
                         />
+
+                        {errors.password && (
+                            <ErrorText>
+                                {errors.password.message}
+                            </ErrorText>
+                        )}
                     </Field>
+
                     {error && <ErrorText>{error}</ErrorText>}
-                    <Button type="submit" disabled={loading} style={{ width: "100%", marginTop: 8 }}>
+
+                    <Button
+                        type="submit"
+                        disabled={loading}
+                        style={{
+                            width: "100%",
+                            marginTop: 8,
+                        }}
+                    >
                         {loading ? "Signing in..." : "Sign in"}
                     </Button>
                 </form>

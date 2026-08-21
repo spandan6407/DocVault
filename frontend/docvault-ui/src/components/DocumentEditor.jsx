@@ -91,7 +91,7 @@ const SubmitButton = styled.button`
   }
 `;
 
-// ---- component ----
+
 
 function DocumentEditor({ onCreated, activeProjectId }) {
     const { user } = useAuth();

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import DashboardLayout from "../../components/layout/DashboardLayout";
@@ -42,78 +43,86 @@ const CheckRow = styled.label`
 
 export default function CreateUserPage() {
     const navigate = useNavigate();
+
     const [projects, setProjects] = useState([]);
-    const [values, setValues] = useState({
-        email: "",
-        firstName: "",
-        lastName: "",
-        password: "",
-    });
     const [selectedProjectIds, setSelectedProjectIds] = useState([]);
-    const [errors, setErrors] = useState({});
     const [creating, setCreating] = useState(false);
-    const [submitError, setSubmitError] = useState(null);
+    const [submitError, setSubmitError] = useState("");
+    const [projectError, setProjectError] = useState("");
 
-    const loadProjects = useCallback(async () => {
-        const res = await docApi.get("/projects");
-        setProjects(res.data);
-    }, []);
+    const {
+        register,
+        handleSubmit,
+        formState: { errors },
+    } = useForm({
+        mode: "onChange",
+    });
 
+    
     useEffect(() => {
-        queueMicrotask(loadProjects);
-    }, [loadProjects]);
-
-    const handleChange = useCallback((field) => (e) => {
-        setValues((p) => ({ ...p, [field]: e.target.value }));
-        setErrors((p) => ({ ...p, [field]: null }));
-    }, []);
-
-    const handleToggleProject = useCallback((projectId) => {
-        setSelectedProjectIds((prev) =>
-            prev.includes(projectId)
-                ? prev.filter((id) => id !== projectId)
-                : [...prev, projectId]
-        );
-        setErrors((p) => ({ ...p, projects: null }));
-    }, []);
-
-    const validate = useCallback(() => {
-        const next = {};
-        if (!values.email.trim()) next.email = "Email is required.";
-        if (!values.password.trim()) next.password = "Password is required.";
-        if (selectedProjectIds.length === 0)
-            next.projects = "Select at least one project.";
-        return next;
-    }, [values, selectedProjectIds]);
-
-    const handleSubmit = useCallback(
-        async (e) => {
-            e.preventDefault();
-            const errs = validate();
-            setErrors(errs);
-            if (Object.keys(errs).length > 0) return;
-
-            setCreating(true);
-            setSubmitError(null);
+        async function loadProjects() {
             try {
-                await userApi.post("/users", {
-                    Email: values.email,
-                    FirstName: values.firstName,
-                    LastName: values.lastName,
-                    Password: values.password,
-                    ProjectIds: selectedProjectIds,
-                });
-                navigate("/admin/users");
-            } catch (err) {
-                setSubmitError(
-                    err?.response?.data?.message || "User creation failed."
-                );
-            } finally {
-                setCreating(false);
+                const response = await docApi.get("/projects");
+                setProjects(response.data);
+            } catch (error) {
+                console.log("Failed to load projects:", error);
             }
-        },
-        [values, selectedProjectIds, validate, navigate]
-    );
+        }
+
+        loadProjects();
+    }, []);
+
+    
+    function handleProjectChange(projectId) {
+        if (selectedProjectIds.includes(projectId)) {
+            setSelectedProjectIds(
+                selectedProjectIds.filter((id) => id !== projectId)
+            );
+        } else {
+            setSelectedProjectIds([
+                ...selectedProjectIds,
+                projectId,
+            ]);
+        }
+
+        
+        setProjectError("");
+    }
+
+    
+    async function onSubmit(data) {
+        setSubmitError("");
+
+        
+        if (selectedProjectIds.length === 0) {
+            setProjectError("Please select at least one project.");
+            return;
+        }
+
+        setProjectError("");
+        setCreating(true);
+
+        try {
+            await userApi.post("/users", {
+                Email: data.email,
+                FirstName: data.firstName,
+                LastName: data.lastName,
+                Password: data.password,
+                ProjectIds: selectedProjectIds,
+            });
+
+            navigate("/admin/users");
+        } catch (error) {
+            console.log("User creation failed:", error);
+
+            setSubmitError(
+                error?.response?.data?.message ||
+                "User creation failed."
+            );
+        } finally {
+            setCreating(false);
+        }
+    }
 
     return (
         <DashboardLayout>
@@ -121,84 +130,197 @@ export default function CreateUserPage() {
                 <PageTitle>Create User</PageTitle>
             </PageHeader>
 
-            <Section as="form" onSubmit={handleSubmit} style={{ maxWidth: 520 }}>
+            <Section
+                as="form"
+                onSubmit={handleSubmit(onSubmit)}
+                style={{ maxWidth: 520 }}
+            >
+                {/* Email */}
                 <Field>
-                    <Label htmlFor="u-email">Email</Label>
+                    <Label htmlFor="u-email">
+                        Email
+                    </Label>
+
                     <Input
                         id="u-email"
                         type="email"
-                        value={values.email}
-                        onChange={handleChange("email")}
                         $invalid={!!errors.email}
-                        required
+                        {...register("email", {
+                            required: "Email is required.",
+
+                            pattern: {
+                                value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                                message: "Enter a valid email address.",
+                            },
+                        })}
                     />
-                    {errors.email && <ErrorText>{errors.email}</ErrorText>}
+
+                    {errors.email && (
+                        <ErrorText>
+                            {errors.email.message}
+                        </ErrorText>
+                    )}
                 </Field>
 
+                
                 <Grid $cols="1fr 1fr">
                     <Field>
-                        <Label htmlFor="u-first">First name</Label>
+                        <Label htmlFor="u-first">
+                            First name
+                        </Label>
+
                         <Input
                             id="u-first"
-                            value={values.firstName}
-                            onChange={handleChange("firstName")}
+                            type="text"
+                            $invalid={!!errors.firstName}
+                            {...register("firstName", {
+                                required: "First name is required.",
+
+                                pattern: {
+                                    value: /^[A-Za-z ]+$/,
+                                    message:
+                                        "First name should contain only letters.",
+                                },
+                            })}
                         />
+
+                        {errors.firstName && (
+                            <ErrorText>
+                                {errors.firstName.message}
+                            </ErrorText>
+                        )}
                     </Field>
+
                     <Field>
-                        <Label htmlFor="u-last">Last name</Label>
+                        <Label htmlFor="u-last">
+                            Last name
+                        </Label>
+
                         <Input
                             id="u-last"
-                            value={values.lastName}
-                            onChange={handleChange("lastName")}
+                            type="text"
+                            $invalid={!!errors.lastName}
+                            {...register("lastName", {
+                                required: "Last name is required.",
+
+                                pattern: {
+                                    value: /^[A-Za-z ]+$/,
+                                    message:
+                                        "Last name should contain only letters.",
+                                },
+                            })}
                         />
+
+                        {errors.lastName && (
+                            <ErrorText>
+                                {errors.lastName.message}
+                            </ErrorText>
+                        )}
                     </Field>
                 </Grid>
 
+                
                 <Field>
-                    <Label htmlFor="u-password">Temporary password</Label>
+                    <Label htmlFor="u-password">
+                        Temporary password
+                    </Label>
+
                     <Input
                         id="u-password"
                         type="password"
-                        value={values.password}
-                        onChange={handleChange("password")}
                         $invalid={!!errors.password}
-                        required
+                        {...register("password", {
+                            required: "Password is required.",
+
+                            minLength: {
+                                value: 8,
+                                message:
+                                    "Password must be at least 8 characters.",
+                            },
+
+                            pattern: {
+                                value:
+                                    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/,
+                                message:
+                                    "Password must contain uppercase, lowercase, and a number.",
+                            },
+                        })}
                     />
-                    {errors.password && <ErrorText>{errors.password}</ErrorText>}
+
+                    {errors.password && (
+                        <ErrorText>
+                            {errors.password.message}
+                        </ErrorText>
+                    )}
                 </Field>
 
+                {/* Projects */}
                 <Field>
                     <Label>
                         Projects{" "}
-                        <span style={{ color: "#6B778C", fontWeight: 400 }}>
+                        <span
+                            style={{
+                                color: "#6B778C",
+                                fontWeight: 400,
+                            }}
+                        >
                             — user joins each as a normal member
                         </span>
                     </Label>
+
                     <CheckList>
                         {projects.length === 0 ? (
-                            <span style={{ color: "#6B778C", fontSize: 13 }}>
+                            <span
+                                style={{
+                                    color: "#6B778C",
+                                    fontSize: 13,
+                                }}
+                            >
                                 No projects yet.
                             </span>
                         ) : (
-                            projects.map((p) => (
-                                <CheckRow key={p.id}>
+                            projects.map((project) => (
+                                <CheckRow key={project.id}>
                                     <input
                                         type="checkbox"
-                                        checked={selectedProjectIds.includes(p.id)}
-                                        onChange={() => handleToggleProject(p.id)}
+                                        checked={selectedProjectIds.includes(
+                                            project.id
+                                        )}
+                                        onChange={() =>
+                                            handleProjectChange(
+                                                project.id
+                                            )
+                                        }
                                     />
-                                    {p.name}
+
+                                    {project.name}
                                 </CheckRow>
                             ))
                         )}
                     </CheckList>
-                    {errors.projects && <ErrorText>{errors.projects}</ErrorText>}
+
+                    {projectError && (
+                        <ErrorText>
+                            {projectError}
+                        </ErrorText>
+                    )}
                 </Field>
 
-                {submitError && <ErrorText>{submitError}</ErrorText>}
+                
+                {submitError && (
+                    <ErrorText>
+                        {submitError}
+                    </ErrorText>
+                )}
 
-                <Button type="submit" disabled={creating}>
-                    {creating ? "Creating..." : "Create User"}
+                
+                <Button
+                    type="submit"
+                    disabled={creating}
+                >
+                    {creating
+                        ? "Creating..."
+                        : "Create User"}
                 </Button>
             </Section>
         </DashboardLayout>

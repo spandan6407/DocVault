@@ -37,6 +37,61 @@ public class UserService : IUserService
         _httpContextAccessor = httpContextAccessor;
     }
 
+    public async Task<List<UserResponseDto>> SearchUsersAsync(string? query, Guid? projectId, string? role)
+    {
+        var q = query?.Trim();
+
+        // Start with active users only
+        var usersQuery = _context.Users
+            .Where(u => u.IsActive)
+            .AsQueryable();
+
+        // Apply text search if provided
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var lower = q.ToLowerInvariant();
+            usersQuery = usersQuery.Where(u =>
+                (u.FirstName != null && u.FirstName.ToLower().Contains(lower)) ||
+                (u.LastName != null && u.LastName.ToLower().Contains(lower)) ||
+                (u.Email != null && u.Email.ToLower().Contains(lower))
+            );
+        }
+
+        // Apply project filter if provided — user must have a membership row for that project
+        if (projectId.HasValue)
+        {
+            var pid = projectId.Value;
+            usersQuery = usersQuery.Where(u => _context.UserProjects.Any(up => up.UserId == u.Id && up.ProjectId == pid && up.IsActive));
+        }
+
+        // Apply role filter if provided — behavior depends on whether projectId supplied
+        if (!string.IsNullOrWhiteSpace(role))
+        {
+            var roleTrim = role.Trim();
+            if (projectId.HasValue)
+            {
+                var pid = projectId.Value;
+                // role applies to membership in the specified project
+                usersQuery = usersQuery.Where(u => _context.UserProjects.Any(up => up.UserId == u.Id && up.ProjectId == pid && up.Role == roleTrim && up.IsActive));
+            }
+            else
+            {
+                // role applies if user has that role in any project
+                usersQuery = usersQuery.Where(u => _context.UserProjects.Any(up => up.UserId == u.Id && up.Role == roleTrim && up.IsActive));
+            }
+        }
+
+        var users = await usersQuery
+            .OrderByDescending(u => u.CreatedAt)
+            .ToListAsync();
+
+        var result = new List<UserResponseDto>();
+        foreach (var user in users)
+            result.Add(await MapToResponseAsync(user));
+
+        return result;
+    }
+
     private HttpClient CreateAuthorizedDocumentClient()
     {
         var client = _httpClientFactory.CreateClient("DocumentService");

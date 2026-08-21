@@ -6,6 +6,7 @@ import {
     Badge,
     Button,
     EmptyState,
+    ErrorText,
     IconButton,
     Menu,
     MenuItem,
@@ -23,7 +24,7 @@ import {
     Tr,
 } from "../../styles/shared";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 4;
 const ROLES = ["All Roles", "ProjectHead", "User"];
 
 function ProjectBadges({ projects }) {
@@ -109,6 +110,7 @@ export default function UsersPage() {
     const [projectFilter, setProjectFilter] = useState("all");
     const [roleFilter, setRoleFilter] = useState("All Roles");
     const [page, setPage] = useState(0);
+    const [error, setError] = useState("");
 
     const loadUsers = useCallback(async () => {
         setLoading(true);
@@ -123,44 +125,64 @@ export default function UsersPage() {
     useEffect(() => { queueMicrotask(loadUsers); }, [loadUsers]);
 
     // Build unique project list from all users' memberships for the project dropdown
-    const allProjects = useMemo(() => {
-        const map = new Map();
-        users.forEach((u) =>
-            (u.projects || []).forEach((p) => {
-                if (!map.has(p.projectId)) map.set(p.projectId, p.projectName || p.projectId.slice(0, 8));
-            })
-        );
-        return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-    }, [users]);
+    const [allProjects, setAllProjects] = useState([]);
 
-    const filteredUsers = useMemo(() => {
-        const term = search.trim().toLowerCase();
-        return users.filter((u) => {
-            // Search filter
-            if (term) {
-                const name = `${u.firstName} ${u.lastName}`.toLowerCase();
-                if (!name.includes(term) && !u.email.toLowerCase().includes(term)) return false;
+    useEffect(() => {
+        let mounted = true;
+        (async () => {
+            try {
+                const res = await userApi.get('/user-projects');
+                if (!mounted) return;
+                const projects = (res.data || []).map(p => ({ id: p.projectId, name: p.projectName }));
+                setAllProjects(projects);
+            } catch (err) {
+                console.warn('Failed to load project list for dropdown', err);
             }
+        })();
+        return () => { mounted = false; };
+    }, []);
 
-            // Project filter — user must have a membership in the selected project
-            if (projectFilter !== "all") {
-                const inProject = (u.projects || []).some((p) => p.projectId === projectFilter);
-                if (!inProject) return false;
+    // When search, projectFilter, or roleFilter changes, call backend search endpoint with debounce
+    useEffect(() => {
+        let mounted = true;
+        let timer = null;
+        const performSearch = async () => {
+            setLoading(true);
+            setError("");
+            try {
+                const trimmed = search.trim();
+                const params = [];
+                if (trimmed) params.push(`query=${encodeURIComponent(trimmed)}`);
+                if (projectFilter !== "all") params.push(`projectId=${encodeURIComponent(projectFilter)}`);
+                if (roleFilter !== "All Roles") params.push(`role=${encodeURIComponent(roleFilter)}`);
+
+                let res;
+                if (params.length > 0) {
+                    res = await userApi.get(`/users/search?${params.join("&")}`);
+                } else {
+                    res = await userApi.get(`/users`);
+                }
+
+                if (!mounted) return;
+                setUsers(res.data);
+                setPage(0);
+            } catch (err) {
+                console.error(err);
+                setError(err?.response?.data?.message || "Failed to load users.");
+            } finally {
+                if (mounted) setLoading(false);
             }
+        };
 
-            // Role filter — check within the selected project if one is chosen,
-            // otherwise check across all memberships
-            if (roleFilter !== "All Roles") {
-                if (u.isAdmin && roleFilter === "Admin") return true;
-                const memberships = projectFilter !== "all"
-                    ? (u.projects || []).filter((p) => p.projectId === projectFilter)
-                    : (u.projects || []);
-                if (!memberships.some((p) => p.role === roleFilter)) return false;
-            }
+        timer = setTimeout(performSearch, 350);
+        return () => {
+            mounted = false;
+            if (timer) clearTimeout(timer);
+        };
+    }, [search, projectFilter, roleFilter]);
 
-            return true;
-        });
-    }, [users, search, projectFilter, roleFilter]);
+    // Server performs search and filters; frontend only paginates the returned users
+    const filteredUsers = useMemo(() => users, [users]);
 
     const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
     const pagedUsers = useMemo(
@@ -211,6 +233,8 @@ export default function UsersPage() {
                         ))}
                     </Select>
                 </Toolbar>
+
+                {error && <ErrorText>{error}</ErrorText>}
 
                 {loading ? (
                     <EmptyState>Loading...</EmptyState>
