@@ -112,11 +112,11 @@ Section text:
     }
 
     // ---------- Document Summary (reads from tree) ----------
-    public async Task<DocumentSummaryDto?> GetDocumentSummaryAsync(Guid documentId, string requesterRole, Guid? requesterProjectId)
+    public async Task<DocumentSummaryDto?> GetDocumentSummaryAsync(Guid documentId, bool isAdmin, Dictionary<Guid, string> projectRoles)
     {
         var doc = await _context.Documents.FirstOrDefaultAsync(d => d.Id == documentId && d.IsActive);
         if (doc == null) return null;
-        if (requesterRole != "Admin" && requesterProjectId != doc.ProjectId) return null;
+        if (!isAdmin && !projectRoles.ContainsKey(doc.ProjectId)) return null;
 
         string sourceText;
         if (!string.IsNullOrWhiteSpace(doc.TreeJson))
@@ -134,11 +134,11 @@ Section text:
     }
 
     // ---------- Document Q&A (tree-guided) ----------
-    public async Task<string?> AskDocumentAsync(Guid documentId, string question, string requesterRole, Guid? requesterProjectId)
+    public async Task<string?> AskDocumentAsync(Guid documentId, string question, bool isAdmin, Dictionary<Guid, string> projectRoles)
     {
         var doc = await _context.Documents.FirstOrDefaultAsync(d => d.Id == documentId && d.IsActive);
         if (doc == null) return null;
-        if (requesterRole != "Admin" && requesterProjectId != doc.ProjectId) return null;
+        if (!isAdmin && !projectRoles.ContainsKey(doc.ProjectId)) return null;
 
         if (string.IsNullOrWhiteSpace(doc.TreeJson))
         {
@@ -167,13 +167,14 @@ Question: {question}";
     }
 
     // ---------- Search across documents (tree-based relevance) ----------
-    public async Task<List<AiSearchResultDto>> SearchAsync(string query, string requesterRole, Guid? requesterProjectId)
+    public async Task<List<AiSearchResultDto>> SearchAsync(string query, bool isAdmin, Dictionary<Guid, string> projectRoles)
     {
         var docsQuery = _context.Documents.Where(d => d.IsActive && d.TreeJson != null);
-        if (requesterRole != "Admin")
+        if (!isAdmin)
         {
-            if (requesterProjectId == null) return new List<AiSearchResultDto>();
-            docsQuery = docsQuery.Where(d => d.ProjectId == requesterProjectId);
+            if (projectRoles.Count == 0) return new List<AiSearchResultDto>();
+            var allowedProjectIds = projectRoles.Keys.ToList();
+            docsQuery = docsQuery.Where(d => allowedProjectIds.Contains(d.ProjectId));
         }
         var docs = await docsQuery.ToListAsync();
         var results = new List<AiSearchResultDto>();

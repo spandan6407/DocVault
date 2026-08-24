@@ -48,6 +48,7 @@ export default function Dashboard() {
                         } catch {
                             membersRes = await docApi.get(`/projects/${p.projectId}/members`);
                         }
+                        // this is the use of the dynamic routing 
                         const docsRes = await docApi.get(`/projects/${p.projectId}/documents`);
                         setProjects((prev) =>
                             prev.map((x) =>
@@ -57,7 +58,7 @@ export default function Dashboard() {
                             )
                         );
                     } catch {
-                        // leave counts null on error
+                        // leave counts null ....
                     }
                 })
             );

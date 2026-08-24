@@ -23,6 +23,7 @@ import {
     Toolbar,
     Tr,
 } from "../../styles/shared";
+import EditUserProjectsModal from "../../components/EditUserProjectsModal";
 
 const PAGE_SIZE = 4;
 const ROLES = ["All Roles", "ProjectHead", "User"];
@@ -41,7 +42,7 @@ function ProjectBadges({ projects }) {
     );
 }
 
-function ActionMenu({ user, onAssignHead, onDelete }) {
+function ActionMenu({ user, onAssignHead, onDelete, onManage }) {
     const [view, setView] = useState("closed");
     const wrapRef = useRef(null);
 
@@ -70,11 +71,9 @@ function ActionMenu({ user, onAssignHead, onDelete }) {
 
             {view === "root" && (
                 <Menu>
-                    {eligibleProjects.length > 0 && (
-                        <MenuItem type="button" onClick={() => setView("pickProject")}>
-                            Make Head ?
-                        </MenuItem>
-                    )}
+                    <MenuItem type="button" onClick={() => { setView("closed"); onManage && onManage(user); }}>
+                        Manage Projects
+                    </MenuItem>
                     <MenuItem
                         type="button"
                         $danger
@@ -112,17 +111,36 @@ export default function UsersPage() {
     const [page, setPage] = useState(0);
     const [error, setError] = useState("");
 
-    const loadUsers = useCallback(async () => {
+    // Fetch users according to current filters/search. Reusable for initial load and refresh.
+    const fetchUsers = useCallback(async () => {
         setLoading(true);
+        setError("");
         try {
-            const res = await userApi.get("/users");
+            const trimmed = search.trim();
+            const params = [];
+            if (trimmed) params.push(`query=${encodeURIComponent(trimmed)}`);
+            if (projectFilter !== "all") params.push(`projectId=${encodeURIComponent(projectFilter)}`);
+            if (roleFilter !== "All Roles") params.push(`role=${encodeURIComponent(roleFilter)}`);
+
+            let res;
+            if (params.length > 0) {
+                res = await userApi.get(`/users/search?${params.join("&")}`);
+            } else {
+                res = await userApi.get(`/users`);
+            }
+
             setUsers(res.data);
+            setPage(0);
+        } catch (err) {
+            console.error(err);
+            setError(err?.response?.data?.message || "Failed to load users.");
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [search, projectFilter, roleFilter]);
 
-    useEffect(() => { queueMicrotask(loadUsers); }, [loadUsers]);
+    // Initial load
+    useEffect(() => { queueMicrotask(fetchUsers); }, [fetchUsers]);
 
     // Build unique project list from all users' memberships for the project dropdown
     const [allProjects, setAllProjects] = useState([]);
@@ -199,13 +217,18 @@ export default function UsersPage() {
     const handleDeleteUser = useCallback(async (id) => {
         if (!window.confirm("Delete this user?")) return;
         await userApi.delete(`/users/${id}`);
-        loadUsers();
-    }, [loadUsers]);
+        fetchUsers();
+    }, [fetchUsers]);
 
     const handleAssignHead = useCallback(async (userId, projectId) => {
         await userApi.put(`/users/${userId}/assign-project-head`, { ProjectId: projectId });
-        loadUsers();
-    }, [loadUsers]);
+        fetchUsers();
+    }, [fetchUsers]);
+
+    const [modalUser, setModalUser] = useState(null);
+    const handleOpenManage = useCallback((user) => setModalUser(user), []);
+    const handleCloseManage = useCallback(() => setModalUser(null), []);
+    const handleSavedFromModal = useCallback(() => { fetchUsers(); handleCloseManage(); }, [fetchUsers, handleCloseManage]);
 
     return (
         <DashboardLayout>
@@ -235,6 +258,14 @@ export default function UsersPage() {
                 </Toolbar>
 
                 {error && <ErrorText>{error}</ErrorText>}
+
+                {modalUser && (
+                    <EditUserProjectsModal
+                        user={modalUser}
+                        onClose={handleCloseManage}
+                        onSaved={handleSavedFromModal}
+                    />
+                )}
 
                 {loading ? (
                     <EmptyState>Loading...</EmptyState>
@@ -266,6 +297,7 @@ export default function UsersPage() {
                                                 user={u}
                                                 onAssignHead={handleAssignHead}
                                                 onDelete={handleDeleteUser}
+                                                onManage={() => handleOpenManage(u)}
                                             />
                                         </Td>
                                     </Tr>

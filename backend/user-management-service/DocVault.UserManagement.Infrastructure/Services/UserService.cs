@@ -200,6 +200,84 @@ public class UserService : IUserService
         return await MapToResponseAsync(user);
     }
 
+    public async Task<List<UserProjectDto>> GetUserProjectsAsync(string userId)
+    {
+        var rows = await _context.UserProjects
+            .Where(up => up.UserId == userId && up.IsActive)
+            .OrderByDescending(up => up.AssignedAt)
+            .ToListAsync();
+
+        return rows.Select(up => new UserProjectDto
+        {
+            Id = up.Id,
+            ProjectId = up.ProjectId,
+            ProjectName = up.ProjectName,
+            UserId = up.UserId,
+            Role = up.Role,
+            AssignedAt = up.AssignedAt,
+            IsActive = up.IsActive
+        }).ToList();
+    }
+
+    public async Task<UserProjectDto?> AddUserToProjectAsync(string userId, AddUserProjectDto request)
+    {
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null || !user.IsActive) return null;
+
+        // validate project exists
+        var existsProj = await _context.UserProjects.AnyAsync(up => up.ProjectId == request.ProjectId);
+        // We cannot rely solely on this table to check existence, but try lookup via other means; proceed anyway
+
+        var already = await _context.UserProjects.AnyAsync(up => up.UserId == userId && up.ProjectId == request.ProjectId && up.IsActive);
+        if (already) return null; // caller should handle null as conflict
+
+        var projectName = await LookupProjectNameAsync(request.ProjectId);
+        var up = new UserProject
+        {
+            Id = Guid.NewGuid(),
+            ProjectId = request.ProjectId,
+            ProjectName = projectName,
+            UserId = userId,
+            Role = request.Role,
+            AssignedAt = DateTime.UtcNow,
+            IsActive = true
+        };
+        _context.UserProjects.Add(up);
+        await _context.SaveChangesAsync();
+
+        return new UserProjectDto
+        {
+            Id = up.Id,
+            ProjectId = up.ProjectId,
+            ProjectName = up.ProjectName,
+            UserId = up.UserId,
+            Role = up.Role,
+            AssignedAt = up.AssignedAt,
+            IsActive = up.IsActive
+        };
+    }
+
+    public async Task<bool> UpdateUserProjectRoleAsync(string userId, Guid projectId, ChangeUserProjectRoleDto request)
+    {
+        var membership = await _context.UserProjects.FirstOrDefaultAsync(up => up.UserId == userId && up.ProjectId == projectId && up.IsActive);
+        if (membership == null) return false;
+        membership.Role = request.Role;
+        _context.UserProjects.Update(membership);
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
+    public async Task<bool> RemoveUserFromProjectAsync(string userId, Guid projectId)
+    {
+        var membership = await _context.UserProjects.FirstOrDefaultAsync(up => up.UserId == userId && up.ProjectId == projectId && up.IsActive);
+        if (membership == null) return false;
+        membership.IsActive = false;
+        membership.AssignedAt = DateTime.UtcNow;
+        _context.UserProjects.Update(membership);
+        await _context.SaveChangesAsync();
+        return true;
+    }
+
     public async Task<bool> DeleteUserAsync(string userIdToDelete, string requesterId, string requesterRole, List<Guid> requesterHeadProjectIds)
     {
         var user = await _userManager.FindByIdAsync(userIdToDelete);
@@ -423,24 +501,35 @@ public class UserService : IUserService
     }
 
     // Create a project change request — now "join a new project", not "replace the only one".
-    public async Task<bool> CreateProjectChangeRequestAsync(string userId, Guid requestedProjectId)
+    public async Task<(bool Success, string? ErrorMessage)> CreateProjectChangeRequestAsync(string userId, Guid requestedProjectId)
     {
         var user = await _userManager.FindByIdAsync(userId);
-        if (user == null || !user.IsActive) return false;
+        if (user == null || !user.IsActive) return (false, "User not found or inactive.");
 
         var alreadyMember = await _context.UserProjects.AnyAsync(up =>
             up.UserId == userId && up.ProjectId == requestedProjectId && up.IsActive);
         if (alreadyMember)
-            return false;
+            return (false, "User is already a member of the selected project.");
 
         try
         {
             var client = CreateAuthorizedDocumentClient();
-            var resp = await client.GetAsync($"/api/projects/{requestedProjectId}");
-            if (!resp.IsSuccessStatusCode && resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            var resp = await client.GetAsync($"/api/projects");
+            if (resp.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Requested project {ProjectId} not found for user {UserId}", requestedProjectId, userId);
-                return false;
+                var content = await resp.Content.ReadAsStringAsync();
+                var projects = System.Text.Json.JsonSerializer.Deserialize<List<ProjectNameLookup>>(content,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (projects == null || !projects.Any(p => p.Id == requestedProjectId))
+                {
+                    _logger.LogWarning("Requested project {ProjectId} not found in project list for user {UserId}", requestedProjectId, userId);
+                    return (false, "Selected project does not exist.");
+                }
+            }
+            else
+            {
+                _logger.LogWarning("Project list lookup failed with status {Status} when validating project {ProjectId} for user {UserId}", resp.StatusCode, requestedProjectId, userId);
+                return (false, "Failed to validate selected project. Try again later.");
             }
         }
         catch (Exception ex)
@@ -461,12 +550,12 @@ public class UserService : IUserService
         try
         {
             await _context.SaveChangesAsync();
-            return true;
+            return (true, null);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to save ProjectChangeRequest for user {UserId}", userId);
-            return false;
+            return (false, ex.Message);
         }
     }
 

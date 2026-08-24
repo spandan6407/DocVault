@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
 import styled from "styled-components";
 import { useAuth } from "../../context/useAuth";
@@ -55,25 +55,59 @@ const LINKS_BY_ROLE = {
         { to: "/projects", label: "Dashboard", end: true },
         { to: "/projects", label: "Projects" },
         { to: "/projects/change", label: "Change Project" },
-        { to: "/projects/:projectId/documents", label: "Documents" },
-        { to: "/projects/:projectId/members", label: "Members" },
-        { to: "/projects/:projectId/upload", label: "Upload Document" },
-        { to: "/projects/:projectId/write", label: "Write Document" },
     ],
     User: [
         { to: "/projects", label: "Dashboard", end: true },
         { to: "/projects", label: "Projects" },
         { to: "/projects/change", label: "Change Project" },
-        { to: "/projects/:projectId/documents", label: "Documents" },
-        { to: "/projects/:projectId/members", label: "Members" },
-        { to: "/projects/:projectId/upload", label: "Upload Document" },
-        { to: "/projects/:projectId/write", label: "Write Document" },
     ],
 };
 
 function Sidebar() {
     const { user } = useAuth();
     const links = useMemo(() => LINKS_BY_ROLE[user?.role] || [], [user?.role]);
+    const [projectsOpen, setProjectsOpen] = useState(false);
+
+    const ProjectsHeader = styled.div`
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      margin-bottom: 2px;
+      border-radius: ${(p) => p.theme.radius};
+      font-size: 13px;
+      font-weight: 500;
+      color: ${(p) => p.theme.color.text};
+      cursor: pointer;
+      &:hover { background: ${(p) => p.theme.color.bg}; }
+    `;
+
+    const ProjectList = styled.div`
+      margin: 6px 0 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    `;
+
+    const ProjectItem = styled(NavLink)`
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: ${(p) => p.theme.radius};
+      color: ${(p) => p.theme.color.text};
+      font-size: 13px;
+      text-decoration: none;
+      &.active { background: ${(p) => p.theme.color.primarySoft}; color: ${(p) => p.theme.color.primary}; font-weight: 600; }
+      &:hover:not(.active) { background: ${(p) => p.theme.color.bg}; }
+    `;
+
+    const ProjectRole = styled.span`
+      font-size: 12px;
+      color: ${(p) => p.theme.color.primary};
+      font-weight: 700;
+      margin-left: 8px;
+    `;
 
     const handleClick = (to) => (e) => {
         const hashIndex = to.indexOf("#");
@@ -89,11 +123,35 @@ function Sidebar() {
     return (
         <Nav>
             <Brand>DocVault</Brand>
-            {links.map((link) => (
-                <NavItem key={`${link.to}-${link.label}`} to={link.to} end={link.end} onClick={handleClick(link.to)}>
-                    {link.label}
-                </NavItem>
-            ))}
+            {links.map((link) => {
+                // Replace the plain "Projects" link with an expandable projects dropdown for normal users
+                if ((link.to === "/projects" || link.to === "/projects") && link.label === "Projects" && (user?.role === "ProjectHead" || user?.role === "User")) {
+                    return (
+                        <div key={`projects-dropdown`}>
+                            <ProjectsHeader onClick={() => setProjectsOpen((v) => !v)}>
+                                <div>Projects</div>
+                                <div>{projectsOpen ? "▾" : "▸"}</div>
+                            </ProjectsHeader>
+                            {projectsOpen && (
+                                <ProjectList>
+                                    {(user?.projects || []).map((p) => (
+                                        <ProjectItem key={String(p.projectId)} to={`/projects/${p.projectId}/documents`} onClick={handleClick(`/projects/${p.projectId}/documents`)}>
+                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.projectName || String(p.projectId).slice(0,8)}</span>
+                                            <ProjectRole>{p.role}</ProjectRole>
+                                        </ProjectItem>
+                                    ))}
+                                </ProjectList>
+                            )}
+                        </div>
+                    );
+                }
+
+                return (
+                    <NavItem key={`${link.to}-${link.label}`} to={link.to} end={link.end} onClick={handleClick(link.to)}>
+                        {link.label}
+                    </NavItem>
+                );
+            })}
         </Nav>
     );
 }

@@ -7,8 +7,8 @@ public interface IAiService
 {
     Task<string> SummarizeAsync(string text);
     Task<string> AnswerQuestionAsync(string documentText, string question);
-    Task<List<AiSearchResultDto>> SearchAsync(string query, string requesterRole, Guid? requesterProjectId);
-    Task<DocumentSummaryDto?> GetDocumentSummaryAsync(Guid documentId, string requesterRole, Guid? requesterProjectId);
-    Task<string?> AskDocumentAsync(Guid documentId, string question, string requesterRole, Guid? requesterProjectId);
+    Task<List<AiSearchResultDto>> SearchAsync(string query, bool isAdmin, Dictionary<Guid, string> projectRoles);
+    Task<DocumentSummaryDto?> GetDocumentSummaryAsync(Guid documentId, bool isAdmin, Dictionary<Guid, string> projectRoles);
+    Task<string?> AskDocumentAsync(Guid documentId, string question, bool isAdmin, Dictionary<Guid, string> projectRoles);
     Task<string> BuildTreeAsync(List<PageText> pages);
 }

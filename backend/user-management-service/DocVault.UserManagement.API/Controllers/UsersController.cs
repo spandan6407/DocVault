@@ -140,6 +140,49 @@ public class UsersController : ControllerBase
         return Ok(result);
     }
 
+    // GET /api/users/{id}/projects
+    [HttpGet("users/{id}/projects")]
+    [Authorize]
+    public async Task<IActionResult> GetProjectsForUser(string id)
+    {
+        if (!await IsAdminAsync(User)) return Forbid();
+        var result = await _userService.GetUserProjectsAsync(id);
+        return Ok(result);
+    }
+
+    // POST /api/users/{id}/projects
+    [HttpPost("users/{id}/projects")]
+    [Authorize]
+    public async Task<IActionResult> AddUserProject(string id, [FromBody] DocVault.UserManagement.Application.DTOs.Users.AddUserProjectDto request)
+    {
+        if (!await IsAdminAsync(User)) return Forbid();
+        var result = await _userService.AddUserToProjectAsync(id, request);
+        if (result == null) return BadRequest(new { message = "Add membership failed or already exists." });
+        return Ok(result);
+    }
+
+    // PUT /api/users/{id}/projects/{projectId}/role
+    [HttpPut("users/{id}/projects/{projectId}/role")]
+    [Authorize]
+    public async Task<IActionResult> UpdateUserProjectRole(string id, Guid projectId, [FromBody] ChangeUserProjectRoleDto request)
+    {
+        if (!await IsAdminAsync(User)) return Forbid();
+        var ok = await _userService.UpdateUserProjectRoleAsync(id, projectId, request);
+        if (!ok) return BadRequest(new { message = "Update role failed or membership not found." });
+        return Ok(new { message = "Role updated." });
+    }
+
+    // DELETE /api/users/{id}/projects/{projectId}
+    [HttpDelete("users/{id}/projects/{projectId}")]
+    [Authorize]
+    public async Task<IActionResult> RemoveUserProject(string id, Guid projectId)
+    {
+        if (!await IsAdminAsync(User)) return Forbid();
+        var ok = await _userService.RemoveUserFromProjectAsync(id, projectId);
+        if (!ok) return BadRequest(new { message = "Remove membership failed or not found." });
+        return Ok(new { message = "Membership removed." });
+    }
+
     [HttpGet("projects/{projectId}/users")]
     [Authorize(Roles = "Admin,ProjectHead,User")]
     public async Task<IActionResult> GetUsersByProject(Guid projectId)
@@ -170,7 +213,12 @@ public class UsersController : ControllerBase
     public async Task<IActionResult> RequestProjectChange([FromBody] CreateProjectChangeRequestDto request)
     {
         if (!ModelState.IsValid)
-            return BadRequest(ModelState);
+        {
+            // Collect model state errors into a simpler array to return to the caller
+            var errors = ModelState.Values.SelectMany(v => v.Errors).Select(e => e.ErrorMessage).ToArray();
+            _logger?.LogWarning("Invalid project change request body: {Errors}", string.Join("; ", errors));
+            return BadRequest(new { message = "Invalid request body.", errors });
+        }
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)
                      ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
@@ -179,6 +227,13 @@ public class UsersController : ControllerBase
         if (string.IsNullOrEmpty(userId))
             return Unauthorized();
 
+        if (request == null || request.RequestedProjectId == Guid.Empty)
+        {
+            _logger?.LogWarning("RequestedProjectId missing or invalid for user {UserId}", userId);
+            return BadRequest(new { message = "RequestedProjectId is required and must be a valid GUID." });
+        }
+
+        // use _userManager directly (no change)
         var appUser = await _userManager.FindByIdAsync(userId);
         if (appUser == null)
             return Unauthorized();
@@ -187,8 +242,24 @@ public class UsersController : ControllerBase
         if (!roles.Contains("User") && !roles.Contains("ProjectHead") && !roles.Contains("Admin"))
             return Forbid();
 
-        var result = await _userService.CreateProjectChangeRequestAsync(userId, request.RequestedProjectId);
-        if (!result) return BadRequest(new { message = "Request failed." });
+        // Pre-validate: user is not already a member of the requested project
+        var currentMemberships = await _userService.GetUserProjectsAsync(userId);
+        if (currentMemberships.Any(up => up.ProjectId == request.RequestedProjectId && up.IsActive))
+        {
+            return BadRequest(new { message = "User is already a member of the selected project." });
+        }
+
+        // Pre-validate: no existing pending request for same user + project
+        var pending = await _userService.GetPendingRequestsAsync();
+        if (pending.Any(r => r.UserId == userId && r.RequestedProjectId == request.RequestedProjectId && r.Status == "Pending"))
+        {
+            return BadRequest(new { message = "A pending request for this project already exists." });
+        }
+
+        var (success, errorMessage) = await _userService.CreateProjectChangeRequestAsync(userId, request.RequestedProjectId);
+        if (!success)
+            return BadRequest(new { message = errorMessage ?? "Request failed. Project may not exist or an error occurred." });
+
         return Ok(new { message = "Request submitted." });
     }
 
