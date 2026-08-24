@@ -22,6 +22,7 @@ const Wrap = styled.div`
 
 const LoginCard = styled(Card)`
   width: 340px;
+  text-align: left;
 `;
 
 const Brand = styled.div`
@@ -88,6 +89,7 @@ export default function Login() {
                         <Input
                             id="email"
                             type="email"
+                            placeholder="email@company.com"
                             $invalid={!!errors.email}
                             {...register("email", {
                                 required: "Email is required.",
@@ -119,6 +121,7 @@ export default function Login() {
                         <Input
                             id="password"
                             type="password"
+                            placeholder="Enter your password"
                             $invalid={!!errors.password}
                             {...register("password", {
                                 required: "Password is required.",

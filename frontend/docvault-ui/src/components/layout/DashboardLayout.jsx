@@ -1,6 +1,7 @@
 import styled from "styled-components";
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
+import { useState } from "react";
 
 const Shell = styled.div`
   height: 100vh;
@@ -21,11 +22,13 @@ const Content = styled.main`
 `;
 
 export default function DashboardLayout({ children }) {
+    const [sidebarOpen, setSidebarOpen] = useState(true);
+
     return (
         <Shell>
-            <Sidebar />
+            <Sidebar isOpen={sidebarOpen} />
             <Main>
-                <TopBar />
+                <TopBar onToggleSidebar={() => setSidebarOpen((v) => !v)} sidebarOpen={sidebarOpen} />
                 {/*this is whatever we are using inside the dashboard... like we take the use of the dashboard inside the admin page...the sidebar and the top bar will be there and rest what we add inside the dashboard layout that will ve different for each of the page  */}
                 <Content>{children}</Content>
             </Main>

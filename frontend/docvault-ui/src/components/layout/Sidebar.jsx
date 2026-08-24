@@ -4,13 +4,18 @@ import styled from "styled-components";
 import { useAuth } from "../../context/useAuth";
 
 const Nav = styled.nav`
-  width: 232px;
+  width: ${(p) => (p.$open ? "232px" : "0px")} ;
+  min-width: ${(p) => (p.$open ? "232px" : "0px")} ;
   flex-shrink: 0;
   background: ${(p) => p.theme.color.surface};
-  border-right: 1px solid ${(p) => p.theme.color.border};
-  padding: 16px 8px;
+  border-right: ${(p) => (p.$open ? `1px solid ${p.theme.color.border}` : "none")};
+  padding: ${(p) => (p.$open ? "16px 8px" : "0px")};
   height: 100%;
-  overflow-y: auto;
+  overflow: ${(p) => (p.$open ? "auto" : "hidden")};
+  transition: width 180ms ease, padding 180ms ease, border-right 180ms ease, opacity 180ms ease;
+  opacity: ${(p) => (p.$open ? 1 : 0)};
+  pointer-events: ${(p) => (p.$open ? "auto" : "none")};
+  text-align: left;
 `;
 
 const Brand = styled.div`
@@ -42,8 +47,6 @@ const NavItem = styled(NavLink)`
 const LINKS_BY_ROLE = {
     Admin: [
         { to: "/admin", label: "Dashboard", end: true },
-        { to: "/admin/projects/new", label: "+ Create Project" },
-        { to: "/admin/users/new", label: "+ Create User" },
         { to: "/admin/projects", label: "Projects" },
         { to: "/admin/users", label: "Users" },
         { to: "/admin/requests", label: "Change Requests" },
@@ -63,7 +66,7 @@ const LINKS_BY_ROLE = {
     ],
 };
 
-function Sidebar() {
+function Sidebar({ isOpen = true }) {
     const { user } = useAuth();
     const links = useMemo(() => LINKS_BY_ROLE[user?.role] || [], [user?.role]);
     const [projectsOpen, setProjectsOpen] = useState(false);
@@ -121,7 +124,7 @@ function Sidebar() {
     };
 
     return (
-        <Nav>
+        <Nav $open={isOpen}>
             <Brand>DocVault</Brand>
             {links.map((link) => {
                 // Replace the plain "Projects" link with an expandable projects dropdown for normal users

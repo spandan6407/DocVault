@@ -15,10 +15,14 @@ const Overlay = styled.div`
 
 const Dialog = styled.div`
   width: 640px;
+  max-width: 95%;
+  max-height: 80vh;
+  overflow: hidden;
   background: ${(p) => p.theme.color.surface};
   border: 1px solid ${(p) => p.theme.color.border};
   padding: 16px;
   border-radius: 8px;
+  position: relative;
 `;
 
 const Row = styled.div`
@@ -116,13 +120,15 @@ export default function EditUserProjectsModal({ user, onClose, onSaved }) {
     return (
         <Overlay>
             <Dialog>
-                <h3>Edit Projects for {user.firstName} {user.lastName}</h3>
+                <button aria-label="Close" onClick={onClose} style={{ position: 'absolute', right: 8, top: 8, border: 'none', background: 'transparent', fontSize: 18, cursor: 'pointer' }}>×</button>
+                <h3 style={{ textAlign: 'left', marginTop: 0 }}>Edit Projects for {user.firstName} {user.lastName}</h3>
                 {message && <InlineMessage type={message.type}>{message.text}</InlineMessage>}
                 <div style={{ marginTop: 12 }}>
                     {memberships.length === 0 ? <div>No project memberships.</div> : (
-                        memberships.map(m => (
+                        <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                        {memberships.map(m => (
                             <Row key={m.projectId}>
-                                <div>
+                                <div style={{ textAlign: 'left' }}>
                                     <div style={{ fontWeight: 600 }}>{m.projectName}</div>
                                     <div style={{ color: '#666' }}>{m.projectId}</div>
                                 </div>
@@ -134,7 +140,8 @@ export default function EditUserProjectsModal({ user, onClose, onSaved }) {
                                     <Button $variant="danger" onClick={() => handleRemove(m.projectId)} disabled={busy}>Remove</Button>
                                 </div>
                             </Row>
-                        ))
+                        ))}
+                        </div>
                     )}
                 </div>
 
@@ -155,7 +162,7 @@ export default function EditUserProjectsModal({ user, onClose, onSaved }) {
                     </div>
                 </div>
 
-                <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                     <Button $variant="secondary" onClick={onClose}>Close</Button>
                 </div>
             </Dialog>

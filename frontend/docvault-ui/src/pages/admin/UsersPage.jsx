@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import DashboardLayout from "../../components/layout/DashboardLayout";
 import { userApi } from "../../api/api";
 import {
@@ -20,22 +19,24 @@ import {
     Table,
     Td,
     Th,
-    Toolbar,
     Tr,
 } from "../../styles/shared";
+import { FaEllipsisV } from 'react-icons/fa';
+import { UserToolbar, UserTableWrapper } from '../../styles/pages/users';
 import EditUserProjectsModal from "../../components/EditUserProjectsModal";
+import CreateUserModal from "../../components/CreateUserModal";
 
 const PAGE_SIZE = 4;
 const ROLES = ["All Roles", "ProjectHead", "User"];
 
 function ProjectBadges({ projects }) {
     if (!projects || projects.length === 0)
-        return <span style={{ color: "#6B778C" }}>—</span>;
+        return <span style={{ color: "#6B778C" }}>-</span>;
     return (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {projects.map((p) => (
-                <Badge key={p.projectId} $tone={p.role === "ProjectHead" ? "success" : undefined}>
-                    {p.projectName || p.projectId.slice(0, 8)} · {p.role}
+                <Badge key={p.projectId} $tone={undefined}>
+                    {p.projectName || String(p.projectId).slice(0, 8)}
                 </Badge>
             ))}
         </div>
@@ -66,7 +67,7 @@ function ActionMenu({ user, onAssignHead, onDelete, onManage }) {
                 onClick={() => setView((v) => (v === "closed" ? "root" : "closed"))}
                 aria-label="Actions"
             >
-                ?
+                <FaEllipsisV />
             </IconButton>
 
             {view === "root" && (
@@ -102,13 +103,15 @@ function ActionMenu({ user, onAssignHead, onDelete, onManage }) {
 }
 
 export default function UsersPage() {
-    const navigate = useNavigate();
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
     const [projectFilter, setProjectFilter] = useState("all");
     const [roleFilter, setRoleFilter] = useState("All Roles");
     const [page, setPage] = useState(0);
+    const [showCreate, setShowCreate] = useState(false);
+    const [sortBy, setSortBy] = useState(null);
+    const [sortDir, setSortDir] = useState(1); // 1 asc, -1 desc
     const [error, setError] = useState("");
 
     // Fetch users according to current filters/search. Reusable for initial load and refresh.
@@ -203,10 +206,6 @@ export default function UsersPage() {
     const filteredUsers = useMemo(() => users, [users]);
 
     const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE));
-    const pagedUsers = useMemo(
-        () => filteredUsers.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE),
-        [filteredUsers, page]
-    );
 
     const resetPage = useCallback(() => setPage(0), []);
 
@@ -230,15 +229,32 @@ export default function UsersPage() {
     const handleCloseManage = useCallback(() => setModalUser(null), []);
     const handleSavedFromModal = useCallback(() => { fetchUsers(); handleCloseManage(); }, [fetchUsers, handleCloseManage]);
 
+    const sortedUsers = useMemo(() => {
+        if (!sortBy) return filteredUsers;
+        const copy = [...filteredUsers];
+        copy.sort((a,b) => {
+            const va = sortBy === 'name' ? `${a.firstName} ${a.lastName}`.toLowerCase() : (a[sortBy] || '').toLowerCase();
+            const vb = sortBy === 'name' ? `${b.firstName} ${b.lastName}`.toLowerCase() : (b[sortBy] || '').toLowerCase();
+            if (va < vb) return -1 * sortDir;
+            if (va > vb) return 1 * sortDir;
+            return 0;
+        });
+        return copy;
+    }, [filteredUsers, sortBy, sortDir]);
+
+    const pagedUsers = useMemo(
+        () => sortedUsers.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE),
+        [sortedUsers, page]
+    );
+
     return (
         <DashboardLayout>
             <PageHeader>
                 <PageTitle>Users</PageTitle>
-                <Button onClick={() => navigate("/admin/users/new")}>+ Create User</Button>
             </PageHeader>
 
             <Section>
-                <Toolbar>
+                <UserToolbar>
                     <SearchInput
                         placeholder="Search by name or email"
                         value={search}
@@ -255,7 +271,10 @@ export default function UsersPage() {
                             <option key={r} value={r}>{r}</option>
                         ))}
                     </Select>
-                </Toolbar>
+                    <div style={{ marginLeft: 'auto' }}>
+                        <Button onClick={() => setShowCreate(true)}>+ Create User</Button>
+                    </div>
+                </UserToolbar>
 
                 {error && <ErrorText>{error}</ErrorText>}
 
@@ -267,32 +286,43 @@ export default function UsersPage() {
                     />
                 )}
 
+                {showCreate && (
+                    <CreateUserModal onClose={() => setShowCreate(false)} onCreated={() => { fetchUsers(); setShowCreate(false); }} />
+                )}
+
                 {loading ? (
                     <EmptyState>Loading...</EmptyState>
                 ) : filteredUsers.length === 0 ? (
                     <EmptyState>No users match the selected filters.</EmptyState>
                 ) : (
                     <>
+                        <UserTableWrapper>
                         <Table>
                             <thead>
                                 <tr>
-                                    <Th>Name</Th>
-                                    <Th>Email</Th>
-                                    <Th>Projects · Role</Th>
+                                    <Th style={{ cursor: 'pointer' }} onClick={() => { if (sortBy === 'name') setSortDir(d => -d); else { setSortBy('name'); setSortDir(1); } }}>
+                                        Name <span style={{ color: '#2563EB', marginLeft: 6 }}>{sortBy === 'name' ? (sortDir === 1 ? '?' : '?') : ''}</span>
+                                    </Th>
+                                    <Th style={{ cursor: 'pointer' }} onClick={() => { if (sortBy === 'email') setSortDir(d => -d); else { setSortBy('email'); setSortDir(1); } }}>
+                                        Email <span style={{ color: '#2563EB', marginLeft: 6 }}>{sortBy === 'email' ? (sortDir === 1 ? '?' : '?') : ''}</span>
+                                    </Th>
+                                    <Th>Projects</Th>
+                                    <Th>Role</Th>
                                     <Th style={{ width: 48 }} />
                                 </tr>
                             </thead>
                             <tbody>
                                 {pagedUsers.map((u) => (
                                     <Tr key={u.id}>
-                                        <Td>{u.firstName} {u.lastName}</Td>
-                                        <Td>{u.email}</Td>
-                                        <Td>
-                                            {u.isAdmin
-                                                ? <Badge>Admin</Badge>
-                                                : <ProjectBadges projects={u.projects} />}
+                                        <Td data-label="Name">{(u.firstName || u.lastName) ? `${u.firstName || ''} ${u.lastName || ''}`.trim() : '-'}</Td>
+                                        <Td data-label="Email">{u.email || '-'}</Td>
+                                        <Td data-label="Projects"> 
+                                            {u.projects && u.projects.length > 0 ? <ProjectBadges projects={u.projects} /> : '-'}
                                         </Td>
-                                        <Td>
+                                        <Td data-label="Role">
+                                            {u.isAdmin ? <Badge $tone="success">Admin</Badge> : (u.role || (u.projects && u.projects[0] && u.projects[0].role) || '-')}
+                                        </Td>
+                                        <Td data-label="Actions">
                                             <ActionMenu
                                                 user={u}
                                                 onAssignHead={handleAssignHead}
@@ -304,27 +334,15 @@ export default function UsersPage() {
                                 ))}
                             </tbody>
                         </Table>
+                        </UserTableWrapper>
 
                         <Pagination>
-                            <span>
-                                Page {page + 1} of {totalPages} · {filteredUsers.length} users
-                            </span>
-                            <Button
-                                type="button"
-                                $variant="secondary"
-                                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                                disabled={page === 0}
-                            >
-                                Previous
-                            </Button>
-                            <Button
-                                type="button"
-                                $variant="secondary"
-                                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                                disabled={page >= totalPages - 1}
-                            >
-                                Next
-                            </Button>
+                            <span>Showing {filteredUsers.length} users</span>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                {Array.from({ length: totalPages }).map((_, idx) => (
+                                    <Button key={idx} $variant={idx === page ? undefined : 'secondary'} onClick={() => setPage(idx)}>{idx + 1}</Button>
+                                ))}
+                            </div>
                         </Pagination>
                     </>
                 )}

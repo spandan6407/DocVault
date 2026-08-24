@@ -2,6 +2,8 @@ import styled from "styled-components";
 
 // we have to take the use of this thing inside the 
 
+const mobile = `@media (max-width: 720px)`;
+
 export const PageHeader = styled.div`
   display: flex;
   align-items: center;
@@ -13,6 +15,7 @@ export const PageTitle = styled.h1`
   font-size: 20px;
   font-weight: 600;
   margin: 0;
+  color: ${(p) => p.theme.color.text};
 `;
 
 export const SectionTitle = styled.h2`
@@ -136,6 +139,9 @@ export const Table = styled.table`
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  ${mobile} {
+    display: block;
+  }
 `;
 
 export const Th = styled.th`
@@ -148,19 +154,60 @@ export const Th = styled.th`
   color: ${(p) => p.theme.color.textMuted};
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  ${mobile} {
+    display: none;
+  }
 `;
 
 export const Td = styled.td`
   padding: 10px 12px;
   border-bottom: 1px solid ${(p) => p.theme.color.border};
-  vertical-align: middle;
+  text-align: left;
+  ${mobile} {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border: none;
+    border-bottom: 1px solid ${(p) => p.theme.color.border};
+    &:before {
+      content: attr(data-label);
+      display: inline-block;
+      font-weight: 600;
+      margin-right: 8px;
+      color: ${(p) => p.theme.color.textMuted};
+    }
+  }
 `;
 
 export const Tr = styled.tr`
   &:hover {
     background: ${(p) => p.theme.color.bg};
   }
+  ${mobile} {
+    display: block;
+    margin-bottom: 12px;
+    border-radius: ${(p) => p.theme.radius};
+    padding: 8px;
+    background: ${(p) => p.theme.color.surface};
+    border: 1px solid ${(p) => p.theme.color.border};
+  }
 `;
+
+/* Responsive table -> stacked cards on small screens */
+export const ResponsiveTable = styled.div``;
+
+// Add mobile styles by injecting rules for table elements
+Table.displayName = 'Table';
+Th.displayName = 'Th';
+Td.displayName = 'Td';
+Tr.displayName = 'Tr';
+
+// append mobile styles via a global style block is heavy; instead add styles here
+// using string interpolation
+Table.extend = true; // noop marker
+
+// inject mobile styles using a small utility wrapper (applies to table elements in DOM)
+// Note: styled-components v6 does not support .extend; we will just export CSS for reuse in components if needed.
 
 export const Pagination = styled.div`
   display: flex;

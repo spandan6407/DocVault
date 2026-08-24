@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import DashboardLayout from "../../components/layout/DashboardLayout";
 import { userApi } from "../../api/api";
-import { Button, EmptyState, List, ListRow, PageHeader, PageTitle, Section } from "../../styles/shared";
+import { EmptyState, List, ListRow, PageHeader, PageTitle, Section, IconButton } from "../../styles/shared";
+import { FaCheck, FaTimes } from 'react-icons/fa';
 
 export default function RequestsPage() {
     const [requests, setRequests] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [projects, setProjects] = useState([]);
 
     const loadRequests = useCallback(async () => {
         setLoading(true);
@@ -20,6 +22,20 @@ export default function RequestsPage() {
     useEffect(() => {
         queueMicrotask(loadRequests);
     }, [loadRequests]);
+
+    useEffect(() => {
+        let mounted = true;
+        (async () => {
+            try {
+                const res = await userApi.get('/user-projects');
+                if (!mounted) return;
+                setProjects((res.data || []).map(p => ({ id: p.projectId, name: p.projectName })));
+            } catch (err) {
+                console.warn('Failed to load projects for requests', err);
+            }
+        })();
+        return () => { mounted = false; };
+    }, []);
 
     const handleApprove = useCallback(
         async (id) => {
@@ -53,13 +69,15 @@ export default function RequestsPage() {
                         {requests.map((r) => (
                             <ListRow key={r.id}>
                                 <div>
-                                    {r.userFullName} → project {r.requestedProjectId}
+                                    {r.userFullName} → project {projects.find(p => p.id === r.requestedProjectId)?.name || r.requestedProjectId}
                                 </div>
                                 <div style={{ display: "flex", gap: 8 }}>
-                                    <Button onClick={() => handleApprove(r.id)}>Approve</Button>
-                                    <Button $variant="danger" onClick={() => handleReject(r.id)}>
-                                        Reject
-                                    </Button>
+                                    <IconButton aria-label="Approve" onClick={() => handleApprove(r.id)}>
+                                        <FaCheck style={{ color: '#10B981' }} />
+                                    </IconButton>
+                                    <IconButton aria-label="Reject" onClick={() => handleReject(r.id)}>
+                                        <FaTimes style={{ color: '#EF4444' }} />
+                                    </IconButton>
                                 </div>
                             </ListRow>
                         ))}
